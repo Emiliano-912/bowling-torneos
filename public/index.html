@@ -6,12 +6,12 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Torneos Bowling 2026">
+<meta name="apple-mobile-web-app-title" content="Libertad 2026">
 <meta name="theme-color" content="#080810">
 <meta name="description" content="Gestión de promedios de bowling">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-192.png">
-<title>🎳 Torneos Bowling 2026</title>
+<title>🎳 Libertad 2026</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Nunito:wght@400;500;600;700&display=swap" rel="stylesheet">
 
@@ -573,11 +573,12 @@ body.admin-mode .admin-only-block { display: block !important; }
 .t-status-activo { background:rgba(134,239,172,.1);color:#86efac;border:1px solid rgba(134,239,172,.25); }
 .t-status-finalizado { background:rgba(148,163,184,.1);color:#94a3b8;border:1px solid rgba(148,163,184,.2); }
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 </head>
 <body>
 <div id="app">
   <div id="header">
-    <div class="logo">🎳 TORNEOS BOWLING <span id="header-season">2026</span></div>
+    <div class="logo">🎳 LIBERTAD <span id="header-season">2026</span></div>
     <div class="header-pills">
       <div class="pill"><strong id="pill-players">0</strong> jugadores</div>
       <div class="pill"><strong id="pill-lines">0</strong> líneas</div>
@@ -912,6 +913,7 @@ body.admin-mode .admin-only-block { display: block !important; }
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px" id="td-badges"></div>
       </div>
       <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn btn-ghost btn-sm" id="td-screenshot-btn" onclick="captureTab()" title="Descargar imagen">📸</button>
         <button class="btn btn-accent btn-sm admin-only" id="td-edit-btn">✏️ Editar</button>
         <button class="btn-icon" onclick="closeModal('modal-tournament-detail')">✕</button>
       </div>
@@ -1018,6 +1020,68 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ── UTILS ─────────────────────────────────────────────────────────────
+
+// ── Screenshot / Share ────────────────────────────────────────────────
+async function captureSection(elementId, filename) {
+  const el = document.getElementById(elementId);
+  if(!el) { toast('No hay contenido para capturar','err'); return; }
+
+  // Get tournament name for header
+  const t = (DB.tournaments||[]).find(x=>x.id===activeTournamentId);
+  const tName = t ? t.name : '';
+
+  // Create a wrapper with dark bg and header
+  const wrapper = document.createElement('div');
+  wrapper.style.cssText = 'position:fixed;left:-9999px;top:0;background:#0f172a;padding:20px 24px 24px;border-radius:0;min-width:360px;max-width:700px;color:#e2e8f0;font-family:Nunito,sans-serif';
+
+  // Header with logo and tournament name
+  const header = document.createElement('div');
+  header.style.cssText = 'text-align:center;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid rgba(255,255,255,.1)';
+  header.innerHTML = `<div style="font-family:'Bebas Neue',cursive;font-size:1.4rem;color:#fbbf24;letter-spacing:2px">🎳 LIBERTAD 2026</div>` +
+    (tName ? `<div style="font-size:.85rem;font-weight:700;margin-top:4px">${tName}</div>` : '');
+  wrapper.appendChild(header);
+
+  // Clone content
+  const clone = el.cloneNode(true);
+  // Remove admin buttons from clone
+  clone.querySelectorAll('.admin-only, .btn-danger, .btn-accent, .btn-ghost').forEach(b => {
+    if(b.textContent.includes('📸') || b.textContent.includes('🎲') || b.textContent.includes('+') || b.textContent.includes('⚙') || b.textContent.includes('🔄')) b.remove();
+  });
+  wrapper.appendChild(clone);
+
+  // Footer
+  const footer = document.createElement('div');
+  footer.style.cssText = 'text-align:center;margin-top:14px;padding-top:10px;border-top:1px solid rgba(255,255,255,.1);font-size:.6rem;color:rgba(255,255,255,.3)';
+  footer.textContent = 'libertad2026.onrender.com';
+  wrapper.appendChild(footer);
+
+  document.body.appendChild(wrapper);
+
+  try {
+    const canvas = await html2canvas(wrapper, {
+      backgroundColor: '#0f172a',
+      scale: 2,
+      useCORS: true,
+      logging: false,
+    });
+    const link = document.createElement('a');
+    link.download = (filename || 'bowling') + '.png';
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+    toast('✓ Imagen descargada');
+  } catch(e) {
+    toast('⚠ Error al capturar','err');
+  } finally {
+    document.body.removeChild(wrapper);
+  }
+}
+
+function captureTab(filename) {
+  const t = (DB.tournaments||[]).find(x=>x.id===activeTournamentId);
+  const tName = t ? t.name.replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ ]/g,'').replace(/ +/g,'_') : 'torneo';
+  const tabName = activeTournamentTab || 'vista';
+  captureSection('td-body', filename || `${tName}_${tabName}`);
+}
 const CATS = ['A','B','C','DAMAS A','DAMAS B'];
 const CAT_VAR = { A:'--A', B:'--B', C:'--C', 'DAMAS A':'--DA', 'DAMAS B':'--DB' };
 const CAT_CLS = { A:'badge-A', B:'badge-B', C:'badge-C', 'DAMAS A':'badge-DA', 'DAMAS B':'badge-DB' };
