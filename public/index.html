@@ -1257,7 +1257,7 @@ document.querySelectorAll('.overlay').forEach(ov => {
 
 // ── HEADER ────────────────────────────────────────────────────────────
 function updateHeader() {
-  document.getElementById('header-season').textContent = DB.season;
+  document.getElementById('header-season').textContent = '2026';
   const lines = DB.players.reduce((s,p)=>s+allScoresOf(p).length,0);
   const total = DB.players.reduce((s,p)=>s+allScoresOf(p).reduce((a,b)=>a+b,0),0);
   const genAvg = lines ? (total/lines).toFixed(2) : '—';
