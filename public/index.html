@@ -677,6 +677,7 @@ body.admin-mode .admin-only-block { display: block !important; }
         <span id="det-badge" class="badge"></span>
       </div>
       <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost btn-sm admin-only" id="det-change-cat">📋 Cat</button>
         <button class="btn btn-danger btn-sm admin-only" id="det-delete-player">🗑</button>
         <button class="btn btn-accent btn-sm admin-only" id="det-add-lines">+ Líneas</button>
         <button class="btn-icon" onclick="closeModal('modal-detail')">✕</button>
@@ -1085,6 +1086,56 @@ function captureTab(filename) {
 const CATS = ['A','B','C','DAMAS A','DAMAS B'];
 const CAT_VAR = { A:'--A', B:'--B', C:'--C', 'DAMAS A':'--DA', 'DAMAS B':'--DB' };
 const CAT_CLS = { A:'badge-A', B:'badge-B', C:'badge-C', 'DAMAS A':'badge-DA', 'DAMAS B':'badge-DB' };
+
+// Get player category for a specific tournament (uses snapshot if available)
+function getPlayerCatInTournament(t, pid) {
+  if(t && t.catSnapshots && t.catSnapshots[pid]) return t.catSnapshots[pid];
+  return DB.players.find(x=>x.id===pid)?.cat || '?';
+}
+
+function changePlayerCategory(playerId, newCat) {
+  const p = DB.players.find(x=>x.id===playerId);
+  if(!p || !isAdmin()) return;
+  const oldCat = p.cat;
+  if(oldCat === newCat) return;
+
+  // Snapshot old category into all existing tournaments
+  (DB.tournaments||[]).forEach(t => {
+    const isInTournament =
+      (t.participants||[]).includes(playerId) ||
+      (t.teams||[]).some(team => (team.members||[]).includes(playerId)) ||
+      (t.ligaGrupos && (t.ligaGrupos.grupos||[]).some(g => (g.members||[]).includes(playerId)));
+    if(isInTournament) {
+      if(!t.catSnapshots) t.catSnapshots = {};
+      t.catSnapshots[playerId] = oldCat;
+    }
+  });
+
+  p.cat = newCat;
+  save();
+  renderView();
+  toast(`✓ ${p.name}: ${oldCat} → ${newCat}`);
+}
+
+function openChangeCat(playerId) {
+  const p = DB.players.find(x=>x.id===playerId);
+  if(!p || !isAdmin()) return;
+  const opts = CATS.map(c => `<option value="${c}" ${c===p.cat?'selected':''}>${c}</option>`).join('');
+  document.getElementById('mr-body').innerHTML = `
+    <div style="font-weight:700;font-size:.88rem;margin-bottom:10px">Cambiar categoría de ${p.name}</div>
+    <div style="font-size:.68rem;color:var(--muted);margin-bottom:12px">El cambio NO afecta torneos en curso ni terminados.</div>
+    <div class="field"><label class="label">Categoría actual: <strong>${p.cat}</strong></label>
+      <select class="input" id="chcat-val" style="font-size:1.1rem">${opts}</select>
+    </div>`;
+  document.getElementById('mr-submit').textContent = 'Cambiar categoría';
+  document.getElementById('mr-submit').onclick = () => {
+    const newCat = document.getElementById('chcat-val').value;
+    changePlayerCategory(playerId, newCat);
+    closeModal('modal-match-result');
+    if(document.getElementById('modal-detail').classList.contains('open')) openDetail(playerId);
+  };
+  openModal('modal-match-result');
+}
 
 function catColor(cat) { return getComputedStyle(document.documentElement).getPropertyValue(CAT_VAR[cat]||'--muted').trim(); }
 function avgOf(arr) { return arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : 0; }
@@ -1678,6 +1729,7 @@ function openDetail(playerId, filterTrnId) {
   document.getElementById('det-badge').className = 'badge '+CAT_CLS[p.cat];
   if(isAdmin()) document.getElementById('det-add-lines').onclick = ()=>{ closeModal('modal-detail'); openAddLines(playerId); };
   if(isAdmin()) document.getElementById('det-delete-player').onclick = ()=>{ deletePlayer(playerId); };
+  if(isAdmin()) document.getElementById('det-change-cat').onclick = ()=>{ openChangeCat(playerId); };
 
   const body = document.getElementById('det-body');
 
@@ -3527,7 +3579,7 @@ function getRankedPool(t, ph, pool) {
     const palos = lines.reduce((s,x)=>s+x, 0);
     const hcap = getHcap(t, pid);
     const spread = lines.length >= 2 ? Math.max(...lines) - Math.min(...lines) : 0;
-    return { pid, name: p?p.name:pid, cat: p?p.cat:'?', palos, lines, hcap, spread };
+    return { pid, name: p?p.name:pid, cat: getPlayerCatInTournament(t, pid), palos, lines, hcap, spread };
   });
 
   const anyScores = result.some(e => e.palos > 0);
@@ -8959,11 +9011,11 @@ function buildLigaFechasTab(t) {
 
   // Match rows
   const matchRows = fecha.matches.map((m,mi) => {
-    const catA = DB.players.find(x=>x.id===m.a)?.cat||'?';
-    const catB = DB.players.find(x=>x.id===m.b)?.cat||'?';
-    const bonusA = m.lineA != null ? lgCalcBonus(lg, m.a, m.lineA) : 0;
-    const bonusB = m.lineB != null ? lgCalcBonus(lg, m.b, m.lineB) : 0;
-    const result = lgMatchResult(lg, m);
+    const catA = getPlayerCatInTournament(t, m.a);
+    const catB = getPlayerCatInTournament(t, m.b);
+    const bonusA = m.lineA != null ? lgCalcBonus(lg, m.a, m.lineA, t) : 0;
+    const bonusB = m.lineB != null ? lgCalcBonus(lg, m.b, m.lineB, t) : 0;
+    const result = lgMatchResult(lg, m, t);
     const ptsA = result ? result.ptsA : '';
     const ptsB = result ? result.ptsB : '';
     const winA = result && result.ptsA > result.ptsB;
@@ -9040,8 +9092,8 @@ function lgAutoFillFecha(tId, fi) {
   save(); renderTournamentDetail(); toast('✓ Fecha auto-completada');
 }
 
-function lgCalcBonus(lg, pid, line) {
-  const cat = DB.players.find(x=>x.id===pid)?.cat || '?';
+function lgCalcBonus(lg, pid, line, t) {
+  const cat = t ? getPlayerCatInTournament(t, pid) : (DB.players.find(x=>x.id===pid)?.cat || '?');
   const thresholds = (lg.bonusConfig||{})[cat] || [];
   let bonus = 0;
   for(let i = 0; i < thresholds.length; i++) {
@@ -9051,7 +9103,7 @@ function lgCalcBonus(lg, pid, line) {
   return bonus;
 }
 
-function lgMatchResult(lg, m) {
+function lgMatchResult(lg, m, t) {
   if(m.lineA == null || m.lineB == null) return null;
   const ptsWin = lg.ptsWin ?? 3, ptsDraw = lg.ptsDraw ?? 1, ptsLoss = lg.ptsLoss ?? 0;
   let ptsA, ptsB;
@@ -9059,8 +9111,8 @@ function lgMatchResult(lg, m) {
   else if(m.lineB > m.lineA) { ptsA = ptsLoss; ptsB = ptsWin; }
   else { ptsA = ptsDraw; ptsB = ptsDraw; }
   // Add bonus
-  ptsA += lgCalcBonus(lg, m.a, m.lineA);
-  ptsB += lgCalcBonus(lg, m.b, m.lineB);
+  ptsA += lgCalcBonus(lg, m.a, m.lineA, t);
+  ptsB += lgCalcBonus(lg, m.b, m.lineB, t);
   return { ptsA, ptsB };
 }
 
@@ -9073,7 +9125,7 @@ function buildLigaTablaTab(t) {
   }
 
   const getName = pid => DB.players.find(x=>x.id===pid)?.name || '?';
-  const getCat = pid => DB.players.find(x=>x.id===pid)?.cat || '?';
+  const getCat = pid => getPlayerCatInTournament(t, pid);
   const getGroupName = pid => {
     const g = (lg.grupos||[]).find(g=>(g.members||[]).includes(pid));
     return g ? g.name : '?';
@@ -9087,13 +9139,13 @@ function buildLigaTablaTab(t) {
 
   fechas.forEach(f => {
     f.matches.forEach(m => {
-      const res = lgMatchResult(lg, m);
+      const res = lgMatchResult(lg, m, t);
       if(!res) return;
       if(!stats[m.a]) stats[m.a] = {pid:m.a,pts:0,pj:0,pg:0,pe:0,pp:0,pf:0,pc:0,bonus:0};
       if(!stats[m.b]) stats[m.b] = {pid:m.b,pts:0,pj:0,pg:0,pe:0,pp:0,pf:0,pc:0,bonus:0};
       const sA = stats[m.a], sB = stats[m.b];
-      const bonusA = lgCalcBonus(lg, m.a, m.lineA);
-      const bonusB = lgCalcBonus(lg, m.b, m.lineB);
+      const bonusA = lgCalcBonus(lg, m.a, m.lineA, t);
+      const bonusB = lgCalcBonus(lg, m.b, m.lineB, t);
       sA.pts += res.ptsA; sB.pts += res.ptsB;
       sA.pj++; sB.pj++;
       sA.pf += m.lineA; sA.pc += m.lineB;
