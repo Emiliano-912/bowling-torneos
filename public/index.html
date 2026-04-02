@@ -676,6 +676,7 @@ body.admin-mode .admin-only-block { display: block !important; }
         <span id="det-badge" class="badge"></span>
       </div>
       <div style="display:flex;gap:8px">
+        <button class="btn btn-danger btn-sm admin-only" id="det-delete-player">🗑</button>
         <button class="btn btn-accent btn-sm admin-only" id="det-add-lines">+ Líneas</button>
         <button class="btn-icon" onclick="closeModal('modal-detail')">✕</button>
       </div>
@@ -1461,6 +1462,45 @@ let linesTargetId = null;
 let oneScores = [];
 let lineMode  = 'bulk';
 
+function deletePlayer(playerId) {
+  const p = DB.players.find(x=>x.id===playerId);
+  if(!p || !isAdmin()) return;
+
+  // Check if player is in any tournament
+  const inTournaments = (DB.tournaments||[]).filter(t => {
+    if((t.participants||[]).includes(playerId)) return true;
+    if((t.teams||[]).some(team => (team.members||[]).includes(playerId))) return true;
+    return false;
+  });
+
+  const warnMsg = inTournaments.length
+    ? `⚠️ "${p.name}" está en ${inTournaments.length} torneo${inTournaments.length>1?'s':''} (${inTournaments.map(t=>t.name).join(', ')}). Se eliminará de todos. ¿Continuar?`
+    : `¿Eliminar a "${p.name}"? Esta acción no se puede deshacer.`;
+
+  if(!confirm(warnMsg)) return;
+
+  // Remove from all tournaments
+  (DB.tournaments||[]).forEach(t => {
+    t.participants = (t.participants||[]).filter(pid => pid !== playerId);
+    (t.teams||[]).forEach(team => {
+      team.members = (team.members||[]).filter(pid => pid !== playerId);
+    });
+    // Remove from liga grupos
+    if(t.ligaGrupos) {
+      (t.ligaGrupos.grupos||[]).forEach(g => {
+        g.members = (g.members||[]).filter(pid => pid !== playerId);
+      });
+    }
+  });
+
+  // Remove player
+  DB.players = DB.players.filter(x => x.id !== playerId);
+  save();
+  closeModal('modal-detail');
+  renderView();
+  toast(`✓ "${p.name}" eliminado`);
+}
+
 function openAddLines(playerId) {
   if(!isAdmin()) return;
   linesTargetId = playerId;
@@ -1568,6 +1608,7 @@ function openDetail(playerId, filterTrnId) {
   document.getElementById('det-badge').textContent = 'CAT '+p.cat+' · '+_allS.length+' líneas';
   document.getElementById('det-badge').className = 'badge '+CAT_CLS[p.cat];
   if(isAdmin()) document.getElementById('det-add-lines').onclick = ()=>{ closeModal('modal-detail'); openAddLines(playerId); };
+  if(isAdmin()) document.getElementById('det-delete-player').onclick = ()=>{ deletePlayer(playerId); };
 
   const body = document.getElementById('det-body');
 
