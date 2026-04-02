@@ -936,6 +936,7 @@ body.admin-mode .admin-only-block { display: block !important; }
 
 <!-- Admin lock button -->
 <button id="admin-lock-btn" title="Admin" onclick="adminToggle()">🔒</button>
+<button id="admin-pw-btn" class="admin-only" title="Cambiar contraseña" onclick="openChangePassword()" style="position:fixed;bottom:22px;right:60px;width:40px;height:40px;border-radius:50%;border:1.5px solid var(--border);background:var(--surface);font-size:1rem;cursor:pointer;z-index:99;display:none">⚙️</button>
 
 <!-- Install Banner -->
 <div id="install-banner">
@@ -1761,6 +1762,7 @@ async function serverLogin() {
       const btn = document.getElementById('admin-lock-btn');
       btn.textContent = '🔓';
       btn.classList.add('unlocked');
+      document.getElementById('admin-pw-btn').style.display = 'block';
       closeModal('modal-pin');
       document.getElementById('admin-pw-input').value = '';
       renderView();
@@ -1784,6 +1786,7 @@ function adminToggle() {
     const btn = document.getElementById('admin-lock-btn');
     btn.textContent = '🔒';
     btn.classList.remove('unlocked');
+    document.getElementById('admin-pw-btn').style.display = 'none';
     renderView();
     toast('🔒 Modo admin desactivado');
   } else {
@@ -1794,12 +1797,53 @@ function adminToggle() {
   }
 }
 
+function openChangePassword() {
+  document.getElementById('mr-body').innerHTML = `
+    <div style="font-weight:700;font-size:.88rem;margin-bottom:10px">⚙️ Cambiar contraseña de admin</div>
+    <div class="field"><label class="label">Contraseña actual</label>
+      <input class="input" id="chpw-current" type="password" placeholder="Actual"></div>
+    <div class="field"><label class="label">Contraseña nueva</label>
+      <input class="input" id="chpw-new" type="password" placeholder="Nueva (mínimo 4 caracteres)"></div>
+    <div class="field"><label class="label">Repetir contraseña nueva</label>
+      <input class="input" id="chpw-confirm" type="password" placeholder="Repetir nueva"></div>`;
+  document.getElementById('mr-submit').textContent = 'Cambiar contraseña';
+  document.getElementById('mr-submit').onclick = async () => {
+    const current = document.getElementById('chpw-current').value;
+    const newPw = document.getElementById('chpw-new').value;
+    const confirm = document.getElementById('chpw-confirm').value;
+    if(!current||!newPw) { toast('Completá todos los campos','err'); return; }
+    if(newPw.length < 4) { toast('Mínimo 4 caracteres','err'); return; }
+    if(newPw !== confirm) { toast('Las contraseñas nuevas no coinciden','err'); return; }
+    try {
+      const res = await fetch('/api/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPassword: current, newPassword: newPw })
+      });
+      const json = await res.json();
+      if(json.ok) {
+        _serverPassword = newPw;
+        sessionStorage.setItem('bowling_admin_pw', newPw);
+        closeModal('modal-match-result');
+        toast('✓ Contraseña cambiada');
+      } else {
+        toast(json.error || 'Error al cambiar','err');
+      }
+    } catch(e) {
+      toast('⚠ Error de conexión','err');
+    }
+  };
+  openModal('modal-match-result');
+}
+
 // Restore admin state on load
 if(_serverPassword) {
   adminMode = true;
   document.body.classList.add('admin-mode');
   const btn = document.getElementById('admin-lock-btn');
   if(btn) { btn.textContent = '🔓'; btn.classList.add('unlocked'); }
+  const pwBtn = document.getElementById('admin-pw-btn');
+  if(pwBtn) pwBtn.style.display = 'block';
 }
 
 // ── TOURNAMENTS VIEW ──────────────────────────────────────────────────
