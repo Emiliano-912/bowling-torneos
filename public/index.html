@@ -578,7 +578,7 @@ body.admin-mode .admin-only-block { display: block !important; }
 <body>
 <div id="app">
   <div id="header">
-    <div class="logo">🎳 LIBERTAD <span id="header-season">2026</span></div>
+    <div class="logo"><span id="header-logo-name">🎳 LIBERTAD </span><span id="header-season">2026</span><button class="admin-only" onclick="openEditSiteName()" style="background:none;border:none;cursor:pointer;font-size:.6rem;margin-left:4px;opacity:.5">✏️</button></div>
     <div class="header-pills">
       <div class="pill"><strong id="pill-players">0</strong> jugadores</div>
       <div class="pill"><strong id="pill-lines">0</strong> líneas</div>
@@ -1037,7 +1037,7 @@ async function captureSection(elementId, filename) {
   // Header with logo and tournament name
   const header = document.createElement('div');
   header.style.cssText = 'text-align:center;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid rgba(255,255,255,.1)';
-  header.innerHTML = `<div style="font-family:'Bebas Neue',cursive;font-size:1.4rem;color:#fbbf24;letter-spacing:2px">🎳 LIBERTAD 2026</div>` +
+  header.innerHTML = `<div style="font-family:'Bebas Neue',cursive;font-size:1.4rem;color:#fbbf24;letter-spacing:2px">🎳 ${DB.siteName||'LIBERTAD'} ${DB.siteYear||'2026'}</div>` +
     (tName ? `<div style="font-size:.85rem;font-weight:700;margin-top:4px">${tName}</div>` : '');
   wrapper.appendChild(header);
 
@@ -1257,7 +1257,11 @@ document.querySelectorAll('.overlay').forEach(ov => {
 
 // ── HEADER ────────────────────────────────────────────────────────────
 function updateHeader() {
-  document.getElementById('header-season').textContent = '2026';
+  const siteName = DB.siteName || 'LIBERTAD';
+  const siteYear = DB.siteYear || '2026';
+  document.getElementById('header-season').textContent = siteYear;
+  document.getElementById('header-logo-name').textContent = '🎳 ' + siteName + ' ';
+  document.title = '🎳 ' + siteName + ' ' + siteYear;
   const lines = DB.players.reduce((s,p)=>s+allScoresOf(p).length,0);
   const total = DB.players.reduce((s,p)=>s+allScoresOf(p).reduce((a,b)=>a+b,0),0);
   const genAvg = lines ? (total/lines).toFixed(2) : '—';
@@ -1896,6 +1900,24 @@ function openChangePassword() {
     } catch(e) {
       toast('⚠ Error de conexión','err');
     }
+  };
+  openModal('modal-match-result');
+}
+
+function openEditSiteName() {
+  document.getElementById('mr-body').innerHTML = `
+    <div style="font-weight:700;font-size:.88rem;margin-bottom:10px">✏️ Cambiar nombre de la página</div>
+    <div class="field"><label class="label">Nombre</label>
+      <input class="input" id="sn-name" value="${DB.siteName||'LIBERTAD'}" placeholder="Ej: LIBERTAD, MI CLUB" style="text-transform:uppercase"></div>
+    <div class="field"><label class="label">Año</label>
+      <input class="input" id="sn-year" value="${DB.siteYear||'2026'}" placeholder="Ej: 2026"></div>
+    <div style="font-size:.65rem;color:var(--muted);margin-top:4px">Se actualiza en el logo, el título de la página y las capturas 📸</div>`;
+  document.getElementById('mr-submit').textContent = 'Guardar';
+  document.getElementById('mr-submit').onclick = () => {
+    DB.siteName = (document.getElementById('sn-name').value||'LIBERTAD').toUpperCase().trim();
+    DB.siteYear = (document.getElementById('sn-year').value||'2026').trim();
+    save(); closeModal('modal-match-result'); updateHeader(); renderView();
+    toast('✓ Nombre actualizado');
   };
   openModal('modal-match-result');
 }
