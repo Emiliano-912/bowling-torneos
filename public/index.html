@@ -2893,7 +2893,7 @@ function buildTeamsTab(t) {
     </div>`;
   }).join('');
 
-  const hcapCatBtn = isTournamentAdmin() ? `<button class="btn btn-ghost btn-sm" id="td-hcap-cat">🏷 HCP por categoría</button>` : '';
+  const hcapCatBtn = isTournamentAdmin() ? `<button class="btn btn-ghost btn-sm" id="td-hcap-cat">🏷 HCP por categoría</button><button class="btn btn-ghost btn-sm" id="td-hcap-player">🏷 HCP por jugador</button>` : '';
 
   return `<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center">${addTeamBtn}${autoTeamBtn}${autoZoneBtn}${hcapCatBtn}${buildStatusBtn(t)}</div>
   <div class="table-wrap">${rows}</div>`;
@@ -2983,6 +2983,51 @@ function openHcapByCategory(tId) {
   openModal('modal-match-result');
 }
 
+function openHcapByPlayer(tId) {
+  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  if(!t||!isTournamentAdmin()) return;
+  const allPlayers = [];
+  (t.teams||[]).forEach(team => {
+    (team.members||[]).forEach(pid => {
+      const p = DB.players.find(x=>x.id===pid);
+      if(p) allPlayers.push({ pid, name: p.name, cat: p.cat, team: team.name, hcap: getHcap(t, pid) });
+    });
+  });
+  if(!allPlayers.length) { toast('No hay jugadores en los equipos','err'); return; }
+
+  const rows = allPlayers.map(p => `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
+    <span class="badge ${CAT_CLS[p.cat]||''}" style="font-size:.5rem;padding:1px 5px;min-width:32px;text-align:center">${p.cat}</span>
+    <span style="flex:1;font-size:.78rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.name}</span>
+    <span style="font-size:.6rem;color:var(--muted);flex-shrink:0">${p.team}</span>
+    <div style="display:flex;align-items:center;gap:3px;flex-shrink:0">
+      <span style="font-size:.58rem;color:var(--muted)">HCP+</span>
+      <input type="number" class="input hcap-player-input" data-pid="${p.pid}" value="${p.hcap||''}"
+        min="0" max="300" placeholder="—"
+        style="width:55px;padding:3px 5px;text-align:center;font-family:'Bebas Neue',cursive;font-size:1.1rem;color:var(--accent)">
+    </div>
+  </div>`).join('');
+
+  document.getElementById('mr-body').innerHTML = `
+    <div style="font-size:.82rem;font-weight:700;margin-bottom:6px">🏷 Hándicap por jugador</div>
+    <div style="font-size:.68rem;color:var(--muted);margin-bottom:10px">Asigná hándicap individual a cada jugador. Dejá vacío o 0 para sin hándicap.</div>
+    <div style="max-height:50vh;overflow-y:auto">${rows}</div>`;
+  document.getElementById('mr-submit').textContent = 'Aplicar';
+  document.getElementById('mr-submit').onclick = () => {
+    if(!t.handicaps) t.handicaps = {};
+    let changed = 0;
+    document.querySelectorAll('.hcap-player-input').forEach(input => {
+      const pid = input.dataset.pid;
+      const val = Math.max(0, parseInt(input.value) || 0);
+      if(val === 0) delete t.handicaps[pid];
+      else t.handicaps[pid] = val;
+      changed++;
+    });
+    save(); closeModal('modal-match-result'); renderTournamentDetail();
+    toast(`✓ HCP actualizado para ${changed} jugador${changed!==1?'es':''}`);
+  };
+  openModal('modal-match-result');
+}
+
 function addAllParticipants(tId) {
   const t = (DB.tournaments||[]).find(x=>x.id===tId);
   if(!t||!isTournamentAdmin()) return;
@@ -2996,6 +3041,7 @@ function addAllParticipants(tId) {
 
 function bindTeamsTab(t) {
   document.getElementById('td-hcap-cat')?.addEventListener('click', () => openHcapByCategory(t.id));
+  document.getElementById('td-hcap-player')?.addEventListener('click', () => openHcapByPlayer(t.id));
   document.getElementById('td-add-team')?.addEventListener('click', () => openAddTeam(t.id));
   document.getElementById('td-auto-teams')?.addEventListener('click', () => openAutoCreateTeams(t.id));
   document.getElementById('td-auto-zones')?.addEventListener('click', () => autoAssignZones(t.id));
@@ -3156,11 +3202,12 @@ function openAddParticipant(tId) {
 function openAddTeam(tId) {
   const t = (DB.tournaments||[]).find(x=>x.id===tId);
   if(!t) return;
-  document.getElementById('mr-body').innerHTML = `<div class="field"><label class="label">Nombre del equipo</label><input class="input" id="new-team-name" placeholder="Ej: García / López" autocomplete="off"></div>`;
+  const label = t.mode==='trio'?'trío':t.mode==='sexteto'?'sexteto':'pareja';
+  const num = (t.teams||[]).length + 1;
+  document.getElementById('mr-body').innerHTML = `<div class="field"><label class="label">Nombre del equipo <span style="font-weight:400;color:var(--muted)">(opcional)</span></label><input class="input" id="new-team-name" placeholder="Si lo dejás vacío se pone ${label} ${num}" autocomplete="off"></div>`;
   document.getElementById('mr-submit').textContent = (t.mode==='trio'?'Crear trío':t.mode==='sexteto'?'Crear sexteto':'Crear pareja');
   document.getElementById('mr-submit').onclick = () => {
-    const name = document.getElementById('new-team-name').value.trim();
-    if(!name) return;
+    const name = document.getElementById('new-team-name').value.trim() || `${label.charAt(0).toUpperCase()+label.slice(1)} ${num}`;
     t.teams = t.teams || [];
     t.teams.push({id:genId(), name, members:[], pj:0,pg:0,pp:0,pts:0,pinesF:0,pinesC:0});
     save(); closeModal('modal-match-result'); renderTournamentDetail(); toast(`✓ ${t.mode==='trio'?'Trío':t.mode==='sexteto'?'Sexteto':'Pareja'} "${name}" creado/a`);
