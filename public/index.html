@@ -1752,8 +1752,9 @@ function openDetail(playerId, filterTrnId) {
   const col = catColor(p.cat);
   document.getElementById('det-name').textContent = p.name;
   document.getElementById('det-name').style.color = col;
+  const _realS = realAllScoresOf(p);
   const _allS = allScoresOf(p); const _trnS = tournamentScoresOf(p.id);
-  document.getElementById('det-badge').textContent = 'CAT '+p.cat+' · '+_allS.length+' líneas';
+  document.getElementById('det-badge').textContent = 'CAT '+p.cat+' · '+_realS.length+' líneas';
   document.getElementById('det-badge').className = 'badge '+CAT_CLS[p.cat];
   if(isAdmin()) document.getElementById('det-add-lines').onclick = ()=>{ closeModal('modal-detail'); openAddLines(playerId); };
   if(isAdmin()) document.getElementById('det-delete-player').onclick = ()=>{ deletePlayer(playerId); };
@@ -1761,7 +1762,7 @@ function openDetail(playerId, filterTrnId) {
 
   const body = document.getElementById('det-body');
 
-  if(!_allS.length) {
+  if(!_realS.length) {
     body.innerHTML = `<div class="empty"><div class="empty-icon">🎳</div><div class="empty-title">Sin líneas todavía</div><div class="empty-sub">Tocá <strong style="color:${col}">+ Líneas</strong> para agregar puntajes.</div></div>`;
     openModal('modal-detail'); return;
   }
@@ -1779,15 +1780,20 @@ function openDetail(playerId, filterTrnId) {
       ${trnChips}
     </div>` : '';
 
-  // Scores to display
+  // Scores to display (real, without HCP)
   let s;
   let histLabel;
   if(filterTrnId) {
     const t = trnsWithLines.find(x=>x.id===filterTrnId);
-    s = t ? tournamentPlayerLines(t, playerId) : [];
+    if(t) {
+      const hcap = getHcap(t, playerId);
+      s = tournamentPlayerLines(t, playerId).map(line => Math.max(0, line - hcap));
+    } else {
+      s = [];
+    }
     histLabel = t ? t.name : '—';
   } else {
-    s = _allS;
+    s = _realS;
     histLabel = `${p.scores.length} regulares${_trnS.length?` + ${_trnS.length} torneo`:''}`;
   }
 
