@@ -534,7 +534,7 @@ body.admin-mode .admin-only-block { display: block !important; }
 
 /* Name cells */
 .rr-name-cell { background: var(--surface); font-weight: 700; vertical-align: middle; padding: 5px 6px; }
-.rr-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: .7rem; }
+.rr-name { font-size: .7rem; line-height: 1.15; word-break: break-word; }
 
 /* Score cells */
 .rr-cell { text-align: center; padding: 3px 2px; transition: background .1s; vertical-align: middle; }
@@ -1094,6 +1094,21 @@ function captureTab(filename) {
   const tName = t ? t.name.replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ ]/g,'').replace(/ +/g,'_') : 'torneo';
   const tabName = activeTournamentTab || 'vista';
   captureSection('td-body', filename || `${tName}_${tabName}`);
+}
+
+function captureZone(tId, zoneId) {
+  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  if(!t) return;
+  const tName = t.name.replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ ]/g,'').replace(/ +/g,'_');
+  let z = (t.zones||[]).find(x=>x.id===zoneId);
+  if(!z) {
+    for(const f of (t.zonasFase||[])) {
+      const found = (f.zones||[]).find(x=>x.id===zoneId);
+      if(found) { z = found; break; }
+    }
+  }
+  const zName = z ? z.name.replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ ]/g,'').replace(/ +/g,'_') : 'zona';
+  captureSection(`zona-block-${zoneId}`, `${tName}_${zName}`);
 }
 const CATS = ['A','B','C','DAMAS A','DAMAS B'];
 const CAT_VAR = { A:'--A', B:'--B', C:'--C', 'DAMAS A':'--DA', 'DAMAS B':'--DB' };
@@ -1773,8 +1788,9 @@ function openDetail(playerId, filterTrnId) {
     openModal('modal-detail'); return;
   }
 
-  // Build tournament filter chips
-  const trnsWithLines = (DB.tournaments||[]).filter(t => tournamentPlayerLines(t, playerId).length > 0);
+  // Build tournament filter chips (excluye torneos que no cuentan para promedio)
+  const trnsWithLines = (DB.tournaments||[]).filter(t => t.countsForAvg !== false && tournamentPlayerLines(t, playerId).length > 0);
+  if(filterTrnId && !trnsWithLines.some(t => t.id === filterTrnId)) filterTrnId = null;
   const trnChips = trnsWithLines.map(t => {
     const active = filterTrnId === t.id;
     return `<button onclick="openDetail('${playerId}','${t.id}')" style="padding:4px 10px;border-radius:20px;font-size:.7rem;font-weight:600;border:1.5px solid ${active?col:'var(--border2)'};background:${active?col+'22':'transparent'};color:${active?col:'var(--muted)'};cursor:pointer;white-space:nowrap">${t.name}</button>`;
@@ -2097,7 +2113,11 @@ let promSortCol      = 'avg';
 let promSortDir      = -1;
 
 function buildPromedios() {
-  const torneos = DB.tournaments || [];
+  const torneos = (DB.tournaments || []).filter(t => t.countsForAvg !== false);
+  // Limpiar selección de torneos desactivados (por si quedaron de antes)
+  promSelectedTrns.forEach(id => {
+    if(!torneos.some(t => t.id === id)) promSelectedTrns.delete(id);
+  });
   const mLabel = m => m==='individual'?'Individual':m==='equipo'?'Parejas':m==='trio'?'Tríos':m==='sexteto'?'Sexteto':m==='mixto'?'Mixto':'—';
   const trnItems = torneos.length
     ? torneos.map(t => {
@@ -2333,7 +2353,7 @@ function bindPromedios() {
 
   // Select all / none
   document.getElementById('prom-sel-all')?.addEventListener('click', () => {
-    (DB.tournaments||[]).forEach(t=>promSelectedTrns.add(t.id));
+    (DB.tournaments||[]).filter(t => t.countsForAvg !== false).forEach(t=>promSelectedTrns.add(t.id));
     promRenderTable();
     document.querySelectorAll('.prom-trn-item').forEach(el => {
       el.classList.add('prom-sel');
@@ -2399,7 +2419,7 @@ function bindPromedios() {
 
   // Initial render — select all tournaments by default
   if(promSelectedTrns.size === 0) {
-    (DB.tournaments||[]).forEach(t => promSelectedTrns.add(t.id));
+    (DB.tournaments||[]).filter(t => t.countsForAvg !== false).forEach(t => promSelectedTrns.add(t.id));
     document.querySelectorAll('.prom-trn-item').forEach(el => {
       el.classList.add('prom-sel');
       const chk = el.querySelector('.prom-chk');
@@ -6298,10 +6318,11 @@ function buildZonasTab(t) {
       const assignBtn = (!viewingArchivedFase && isTournamentAdmin() && isTeamMode)
         ? `<button class="btn btn-accent btn-sm" style="margin-top:8px" onclick="openZoneAssignTeams('${t.id}','${z.id}')">+ Asignar ${teamLabel}</button>`
         : '';
-      return `<div class="zona-rrblock">
+      return `<div class="zona-rrblock" id="zona-block-${z.id}">
         <div class="zona-rr-title" style="display:flex;align-items:center;gap:8px">
         ${z.name}
         ${(t.mode==='equipo'||t.mode==='trio'||t.mode==='sexteto')&&(t.ptsIndividual!=null||t.ptsEquipo!=null)?`<span style="font-size:.58rem;color:var(--muted);font-family:inherit">Pts ind: ${t.ptsIndividual??1} · Eq: ${t.ptsEquipo??2}</span>`:''}
+        <button class="btn btn-ghost btn-sm" style="margin-left:auto;padding:2px 7px;font-size:.7rem" onclick="captureZone('${t.id}','${z.id}')" title="Descargar imagen de la zona">📸</button>
       </div>
         <div style="color:var(--muted);font-size:.78rem;padding:8px 0">Sin participantes asignados</div>
         ${assignBtn}
@@ -6314,7 +6335,20 @@ function buildZonasTab(t) {
     const n = entries.length;
 
     // Shorten name for table cells — first word or first 8 chars
+    // Parejas/Tríos/Sextetos: apilar apellido de cada integrante en líneas separadas
     const shortNameFor = id => {
+      if(t.mode === 'equipo' || t.mode === 'trio' || t.mode === 'sexteto') {
+        const team = (t.teams||[]).find(x=>x.id===id);
+        if(team) {
+          return (team.members||[])
+            .map(pid => {
+              const full = DB.players.find(p=>p.id===pid)?.name || '?';
+              const word = full.split(' ')[0];
+              return word.length <= 10 ? word : word.slice(0,9)+'…';
+            })
+            .join('<br>');
+        }
+      }
       const full = getName(id);
       const word = full.split(' ')[0];
       return word.length <= 9 ? word : word.slice(0,8)+'…';
@@ -6388,10 +6422,11 @@ function buildZonasTab(t) {
       </tr>`;
     }).join('');
 
-    return `<div class="zona-rrblock">
+    return `<div class="zona-rrblock" id="zona-block-${z.id}">
       <div style="margin-bottom:10px;display:flex;align-items:center;gap:8px">
         <div class="zona-rr-title" style="margin-bottom:0">${z.name}</div>
         ${!viewingArchivedFase && isTournamentAdmin() ? `<button class="btn btn-ghost btn-sm" style="padding:2px 7px;font-size:.7rem" onclick="openRenameZone('${t.id}','${z.id}')">✏️</button>` : ''}
+        <button class="btn btn-ghost btn-sm" style="margin-left:auto;padding:2px 7px;font-size:.7rem" onclick="captureZone('${t.id}','${z.id}')" title="Descargar imagen de la zona">📸</button>
       </div>
       <!-- Always-expanded table with PTS/POS -->
       <div class="rr-table-wrap" style="overflow-x:auto">
