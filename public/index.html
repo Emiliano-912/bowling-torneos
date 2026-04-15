@@ -1490,7 +1490,9 @@ function buildStats() {
   const allScores = active.flatMap(p=>allScoresOf(p));
   const totalLines = allScores.length;
   const totalPines = allScores.reduce((a,b)=>a+b,0);
-  const genAvg = (totalPines/totalLines).toFixed(2);
+  // Promedio general: usar líneas reales (sin HCP, sólo torneos que cuentan)
+  const realScoresAll = active.flatMap(p=>realAllScoresOf(p));
+  const genAvg = realScoresAll.length ? (realScoresAll.reduce((a,b)=>a+b,0)/realScoresAll.length).toFixed(2) : '0.00';
   const bestScore = Math.max(...allScores);
   const bestPlayer = active.find(p=>allScoresOf(p).includes(bestScore));
   const mostActive = [...active].sort((a,b)=>b.scores.length-a.scores.length)[0];
@@ -1505,7 +1507,14 @@ function buildStats() {
   ];
 
   const buckets=[{l:'<90',a:0,b:90},{l:'90-99',a:90,b:100},{l:'100-109',a:100,b:110},{l:'110-119',a:110,b:120},{l:'120-129',a:120,b:130},{l:'130+',a:130,b:999}];
-  const counts=buckets.map(bk=>active.filter(p=>avgOf(allScoresOf(p))>=bk.a&&avgOf(allScoresOf(p))<bk.b).length);
+  // Usar promedios reales (sin HCP, excluye torneos con countsForAvg:false)
+  // y solo jugadores que tengan al menos una línea real
+  const counts=buckets.map(bk=>active.filter(p=>{
+    const real=realAllScoresOf(p);
+    if(!real.length) return false;
+    const a=avgOf(real);
+    return a>=bk.a && a<bk.b;
+  }).length);
   const maxC=Math.max(...counts,1);
 
   const distBars = buckets.map((bk,i)=>`
