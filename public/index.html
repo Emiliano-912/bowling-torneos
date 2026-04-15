@@ -6896,7 +6896,7 @@ function openZoneRRMatch(tId, zoneId, preA, preB) {
     const membersB = memberRowsHtml(teamB, storedB, 'b');
 
     bodyHtml += `
-    <div style="display:grid;grid-template-columns:1fr 60px 1fr 60px;gap:6px 10px;align-items:center;margin-bottom:10px">
+    <div id="rr-members-grid" style="display:grid;grid-template-columns:1fr 60px 1fr 60px;gap:6px 10px;align-items:center;margin-bottom:10px">
       <div style="font-size:.62rem;color:var(--muted);text-transform:uppercase;font-weight:700">${t.mode==='trio'?'Trío A':'Pareja A'}</div>
       <div style="font-size:.62rem;color:var(--muted);text-transform:uppercase;text-align:center">Palos</div>
       <div style="font-size:.62rem;color:var(--muted);text-transform:uppercase;font-weight:700">${t.mode==='trio'?'Trío B':'Pareja B'}</div>
@@ -7089,25 +7089,41 @@ function rrCalcPoints() {
   }
 }
 
-function rrRefreshMembers(tId, zoneId, side) {
-  const t   = (DB.tournaments||[]).find(x=>x.id===tId);
-  const z   = t?.zones?.find(x=>x.id===zoneId);
-  if(!t||!z) return;
-  const teamId = document.getElementById(`zm-${side}`)?.value;
-  const team   = (t.teams||[]).find(x=>x.id===teamId);
-  const container = document.getElementById(`rr-members-${side}`);
-  if(!container) return;
-  container.innerHTML = (team?.members||[]).map((pid,i) => {
-    const p    = DB.players.find(x=>x.id===pid);
-    const name = p ? p.name : '?';
-    return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
-      <span style="flex:1;font-size:.76rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${name}</span>
-      <input class="input ms-${side}" type="number" min="0" max="300" value="" placeholder="—"
-        style="width:68px;text-align:center;font-family:'Bebas Neue',cursive;font-size:1.05rem;padding:4px 6px"
-        oninput="rrUpdateTotal('${side}')">
-    </div>`;
-  }).join('') || '<div style="font-size:.76rem;color:var(--muted)">Sin integrantes</div>';
-  rrUpdateTotal(side);
+function rrRefreshMembers(tId, zoneId, _side) {
+  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  if(!t) return;
+  const grid = document.getElementById('rr-members-grid');
+  if(!grid) return;
+  const selA = document.getElementById('zm-a')?.value;
+  const selB = document.getElementById('zm-b')?.value;
+  const teamA = (t.teams||[]).find(x=>x.id===selA);
+  const teamB = (t.teams||[]).find(x=>x.id===selB);
+
+  // Preservar valores actuales por índice
+  const curA = [...document.querySelectorAll('.ms-a')].map(el=>el.value);
+  const curB = [...document.querySelectorAll('.ms-b')].map(el=>el.value);
+
+  const label = t.mode==='sexteto'?'Sexteto':t.mode==='trio'?'Trío':'Pareja';
+  const headerHtml = `
+    <div style="font-size:.62rem;color:var(--muted);text-transform:uppercase;font-weight:700">${label} A</div>
+    <div style="font-size:.62rem;color:var(--muted);text-transform:uppercase;text-align:center">Palos</div>
+    <div style="font-size:.62rem;color:var(--muted);text-transform:uppercase;font-weight:700">${label} B</div>
+    <div style="font-size:.62rem;color:var(--muted);text-transform:uppercase;text-align:center">Palos</div>`;
+
+  const rowsHtml = (teamA?.members||[]).map((_,i)=>{
+    const pA = DB.players.find(x=>x.id===(teamA?.members||[])[i]);
+    const pB = DB.players.find(x=>x.id===(teamB?.members||[])[i]);
+    const vA = curA[i]||''; const vB = curB[i]||'';
+    return `<span style="font-size:.74rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:3px 0">${pA?pA.name.split(' ')[0]:'?'}</span>
+      <input class="input ms-a" type="number" min="0" max="999" value="${vA}" placeholder="—" data-idx="${i}"
+        style="width:60px;text-align:center;font-family:'Bebas Neue',cursive;font-size:1rem;padding:3px 5px" oninput="rrCalcPoints()">
+      <span style="font-size:.74rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:3px 0">${pB?pB.name.split(' ')[0]:'?'}</span>
+      <input class="input ms-b" type="number" min="0" max="999" value="${vB}" placeholder="—" data-idx="${i}"
+        style="width:60px;text-align:center;font-family:'Bebas Neue',cursive;font-size:1rem;padding:3px 5px" oninput="rrCalcPoints()">`;
+  }).join('');
+
+  grid.innerHTML = headerHtml + rowsHtml;
+  if(typeof rrCalcPoints === 'function') rrCalcPoints();
 }
 
 // remove old helpers if present
