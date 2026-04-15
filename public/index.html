@@ -6343,15 +6343,13 @@ function buildZonasTab(t) {
           return (team.members||[])
             .map(pid => {
               const full = DB.players.find(p=>p.id===pid)?.name || '?';
-              const word = full.split(' ')[0];
-              return word.length <= 10 ? word : word.slice(0,9)+'…';
+              return full.split(' ')[0].replace(/,$/,'');
             })
             .join('<br>');
         }
       }
       const full = getName(id);
-      const word = full.split(' ')[0];
-      return word.length <= 9 ? word : word.slice(0,8)+'…';
+      return full.split(' ')[0].replace(/,$/,'');
     };
 
     // Header row: position numbers 1..n
@@ -6369,7 +6367,7 @@ function buildZonasTab(t) {
     // Compact table: name + cross cells only (no PTS/POS cols)
     // Expanded table: adds PTS/PALOS + POS columns
     // name col: 28%, cross cols share rest
-    const namePx = 90;   // fixed px for name col
+    const namePx = 110;  // fixed px for name col
     const crossPx = 46;  // fixed px per opponent col
     const ptsPx = 52;    // pts+palos col
     const posPx = 36;    // pos col
