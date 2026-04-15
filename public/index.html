@@ -534,7 +534,7 @@ body.admin-mode .admin-only-block { display: block !important; }
 
 /* Name cells */
 .rr-name-cell { background: var(--surface); font-weight: 700; vertical-align: middle; padding: 5px 6px; }
-.rr-name { font-size: .7rem; line-height: 1.15; word-break: break-word; }
+.rr-name { font-size: .65rem; line-height: 1.2; word-break: break-word; }
 
 /* Score cells */
 .rr-cell { text-align: center; padding: 3px 2px; transition: background .1s; vertical-align: middle; }
@@ -6341,15 +6341,11 @@ function buildZonasTab(t) {
         const team = (t.teams||[]).find(x=>x.id===id);
         if(team) {
           return (team.members||[])
-            .map(pid => {
-              const full = DB.players.find(p=>p.id===pid)?.name || '?';
-              return full.split(' ')[0].replace(/,$/,'');
-            })
+            .map(pid => (DB.players.find(p=>p.id===pid)?.name || '?').trim())
             .join('<br>');
         }
       }
-      const full = getName(id);
-      return full.split(' ')[0].replace(/,$/,'');
+      return getName(id).trim();
     };
 
     // Header row: position numbers 1..n
@@ -6367,7 +6363,7 @@ function buildZonasTab(t) {
     // Compact table: name + cross cells only (no PTS/POS cols)
     // Expanded table: adds PTS/PALOS + POS columns
     // name col: 28%, cross cols share rest
-    const namePx = 110;  // fixed px for name col
+    const namePx = 150;  // fixed px for name col
     const crossPx = 46;  // fixed px per opponent col
     const ptsPx = 52;    // pts+palos col
     const posPx = 36;    // pos col
