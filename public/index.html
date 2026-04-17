@@ -1204,26 +1204,28 @@ function tournamentPlayerLines(t, playerId) {
   } else if((t.mode === 'equipo' || t.mode === 'trio')) {
     (t.teams||[]).forEach(team => {
       const memberIdx = (team.members||[]).indexOf(playerId);
-      if(memberIdx === -1) return;
       // Zones matches
       (t.zones||[]).forEach(z => {
         Object.values(z.matches||{}).forEach(m => {
           if(!m || m.pts_a === undefined) return;
-          let ms = null;
-          if(m.id_a === team.id) ms = m.member_scores_a;
-          else if(m.id_b === team.id) ms = m.member_scores_b;
-          if(ms && ms[memberIdx] > 0) lines.push(ms[memberIdx]);
+          let ms = null, pids = null;
+          if(m.id_a === team.id) { ms = m.member_scores_a; pids = m.member_pids_a; }
+          else if(m.id_b === team.id) { ms = m.member_scores_b; pids = m.member_pids_b; }
+          if(!ms) return;
+          const idx = pids ? pids.indexOf(playerId) : memberIdx;
+          if(idx >= 0 && ms[idx] > 0) lines.push(ms[idx]);
         });
       });
       // Bracket matches (pica-pica)
       (t.bracketRounds||[]).forEach(round => {
         (round.matches||[]).forEach(bm => {
-          let ms = null;
-          if(bm.a === team.id) ms = bm.member_scores_a;
-          else if(bm.b === team.id) ms = bm.member_scores_b;
-          if(ms && ms[memberIdx]) {
-            // Support both nested [[l1,l2],[l1,l2]] and flat [n1,n2] format
-            const val = ms[memberIdx];
+          let ms = null, pids = null;
+          if(bm.a === team.id) { ms = bm.member_scores_a; pids = bm.member_pids_a; }
+          else if(bm.b === team.id) { ms = bm.member_scores_b; pids = bm.member_pids_b; }
+          if(!ms) return;
+          const idx = pids ? pids.indexOf(playerId) : memberIdx;
+          if(idx >= 0 && ms[idx]) {
+            const val = ms[idx];
             if(Array.isArray(val)) {
               val.forEach(v => { if(v > 0) lines.push(v); });
             } else if(val > 0) {
@@ -1241,10 +1243,12 @@ function tournamentPlayerLines(t, playerId) {
       if(t.zonaFinal) {
         Object.values(t.zonaFinal.matches||{}).forEach(m => {
           if(!m || m.pts_a === undefined) return;
-          let ms2 = null;
-          if(m.id_a === team.id) ms2 = m.member_scores_a;
-          else if(m.id_b === team.id) ms2 = m.member_scores_b;
-          if(ms2 && ms2[memberIdx] > 0) lines.push(ms2[memberIdx]);
+          let ms2 = null, pids2 = null;
+          if(m.id_a === team.id) { ms2 = m.member_scores_a; pids2 = m.member_pids_a; }
+          else if(m.id_b === team.id) { ms2 = m.member_scores_b; pids2 = m.member_pids_b; }
+          if(!ms2) return;
+          const idx2 = pids2 ? pids2.indexOf(playerId) : memberIdx;
+          if(idx2 >= 0 && ms2[idx2] > 0) lines.push(ms2[idx2]);
         });
       }
     });
@@ -3441,6 +3445,25 @@ async function confirmSubstitute(tId, teamId, oldPid, newPid) {
   if(!ok) return;
   const idx = (team.members||[]).indexOf(oldPid);
   if(idx === -1) return;
+  // Guardar PIDs actuales en matches existentes para preservar líneas del jugador saliente
+  (t.zones||[]).forEach(z => {
+    Object.values(z.matches||{}).forEach(m => {
+      if(m.id_a === teamId && !m.member_pids_a) m.member_pids_a = [...team.members];
+      if(m.id_b === teamId && !m.member_pids_b) m.member_pids_b = [...team.members];
+    });
+  });
+  (t.bracketRounds||[]).forEach(round => {
+    (round.matches||[]).forEach(bm => {
+      if(bm.a === teamId && !bm.member_pids_a) bm.member_pids_a = [...team.members];
+      if(bm.b === teamId && !bm.member_pids_b) bm.member_pids_b = [...team.members];
+    });
+  });
+  if(t.zonaFinal) {
+    Object.values(t.zonaFinal.matches||{}).forEach(m => {
+      if(m.id_a === teamId && !m.member_pids_a) m.member_pids_a = [...team.members];
+      if(m.id_b === teamId && !m.member_pids_b) m.member_pids_b = [...team.members];
+    });
+  }
   team.members[idx] = newPid;
   if(t.sextScores?.[teamId]?.[oldPid] && !t.sextScores[teamId][newPid]) {
     t.sextScores[teamId][newPid] = Array(t.sextScores[teamId][oldPid].length).fill(0);
@@ -6165,6 +6188,18 @@ function getTeamPlayersName(t, teamId) {
   }).join(' & ');
 }
 
+function swapZoneEntry(tId, zoneId, fromIdx, toIdx) {
+  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  if(!t) return;
+  const z = (t.zones||[]).find(x=>x.id===zoneId);
+  if(!z || !z.entries) return;
+  if(fromIdx < 0 || toIdx < 0 || fromIdx >= z.entries.length || toIdx >= z.entries.length) return;
+  const tmp = z.entries[fromIdx];
+  z.entries[fromIdx] = z.entries[toIdx];
+  z.entries[toIdx] = tmp;
+  save(); renderTournamentDetail();
+}
+
 function recalcZoneStandings(z, t) {
   const matches = z.matches || {};
   const totals = {};
@@ -6454,8 +6489,10 @@ function buildZonasTab(t) {
       </tr>`;
     }).join('');
 
+    const zoneHasMatches = Object.keys(z.matches||{}).length > 0;
+
     // Expanded body rows (with PTS/POS)
-    const expandedRows = entries.map((rowEntry) => {
+    const expandedRows = entries.map((rowEntry, ri) => {
       const crossCells = entries.map((colEntry) => {
         if(rowEntry.id === colEntry.id) return `<td class="rr-cell rr-diag"><div class="rr-cell-inner"><span class="rr-cell-pts">X</span></div></td>`;
         const res = getZoneMatchResult(z, rowEntry.id, colEntry.id);
@@ -6471,8 +6508,11 @@ function buildZonasTab(t) {
       const clsN = clsNForRender;
       const classifDot = (t.format==='zona+elim' && typeof pos==='number' && pos<=clsN)
         ? `<span style="display:inline-block;width:5px;height:5px;border-radius:50%;background:#86efac;margin-left:3px;vertical-align:middle"></span>` : '';
+      const reorderBtns = (!viewingArchivedFase && !zoneHasMatches && isTournamentAdmin())
+        ? `<span style="display:inline-flex;flex-direction:column;gap:0;margin-right:3px;flex-shrink:0">${ri>0?`<button onclick="event.stopPropagation();swapZoneEntry('${t.id}','${z.id}',${ri},${ri-1})" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.55rem;padding:0;line-height:1" title="Subir">▲</button>`:'<span style="width:10px;display:inline-block"></span>'}${ri<entries.length-1?`<button onclick="event.stopPropagation();swapZoneEntry('${t.id}','${z.id}',${ri},${ri+1})" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.55rem;padding:0;line-height:1" title="Bajar">▼</button>`:'<span style="width:10px;display:inline-block"></span>'}</span>`
+        : '';
       return `<tr>
-        <td class="rr-name-cell"><div class="rr-name">${shortNameFor(rowEntry.id)}${classifDot}</div></td>
+        <td class="rr-name-cell"><div class="rr-name">${reorderBtns}${shortNameFor(rowEntry.id)}${classifDot}</div></td>
         ${crossCells}
         <td class="rr-total"><div class="rr-cell-inner"><span class="rr-cell-pts" style="color:var(--accent)">${pts}</span><span class="rr-palos-sum">${palosF}</span></div></td>
         <td class="rr-pos-cell ${posClass}">${pos}</td>
