@@ -2935,7 +2935,7 @@ function buildTeamsTab(t) {
               <span class="badge ${CAT_CLS[p.cat]||''}" style="font-size:.52rem;padding:1px 5px">${p.cat}</span>
               ${hcBadge}
               <span style="font-size:.76rem;font-weight:600;flex:1">${p.name}</span>
-              ${isTournamentAdmin() ? `<button onclick="event.stopPropagation();removeTeamMember('${t.id}','${team.id}','${p.id}')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.7rem;padding:0 2px;line-height:1" title="Quitar">✕</button>` : ''}
+              ${isTournamentAdmin() ? `<button onclick="event.stopPropagation();openSubstitutePlayer('${t.id}','${team.id}','${p.id}')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.7rem;padding:0 2px;line-height:1" title="Sustituir">🔄</button><button onclick="event.stopPropagation();removeTeamMember('${t.id}','${team.id}','${p.id}')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.7rem;padding:0 2px;line-height:1" title="Quitar">✕</button>` : ''}
             </div>`;
           }).join('')}
         </div>`
@@ -3399,6 +3399,59 @@ function swapTeamMember(tId, teamId, fromIdx, toIdx) {
   team.members[fromIdx] = team.members[toIdx];
   team.members[toIdx] = tmp;
   save(); renderTournamentDetail();
+}
+
+function openSubstitutePlayer(tId, teamId, oldPid) {
+  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const team = (t?.teams||[]).find(x=>x.id===teamId);
+  if(!t || !team) return;
+  const oldPlayer = DB.players.find(x=>x.id===oldPid);
+  const allMembers = new Set((t.teams||[]).flatMap(tm=>tm.members||[]));
+  const available = DB.players.filter(p => (t.cat==='TODOS'||p.cat===t.cat) && !allMembers.has(p.id));
+  if(!available.length) { toast('No hay jugadores disponibles para sustituir','err'); return; }
+
+  function buildList(q) {
+    const filtered = q ? available.filter(p => p.name.toLowerCase().includes(q.toLowerCase())) : available;
+    return filtered.map(p => `<div onclick="confirmSubstitute('${tId}','${teamId}','${oldPid}','${p.id}')" style="display:flex;align-items:center;gap:8px;padding:10px;cursor:pointer;border-bottom:1px solid var(--border);transition:background .1s" onmouseover="this.style.background='rgba(59,130,246,.08)'" onmouseout="this.style.background='transparent'">
+      <span class="badge ${CAT_CLS[p.cat]||''}" style="font-size:.5rem;padding:1px 5px">${p.cat}</span>
+      <span style="font-size:.82rem;font-weight:500">${p.name}</span>
+    </div>`).join('') || '<div style="padding:12px;text-align:center;color:var(--muted);font-size:.76rem">No se encontraron jugadores</div>';
+  }
+
+  document.getElementById('mr-body').innerHTML = `
+    <div style="font-size:.82rem;font-weight:700;margin-bottom:4px">Sustituir a ${oldPlayer?.name||'?'}</div>
+    <div style="font-size:.72rem;color:var(--muted);margin-bottom:10px">Las líneas ya jugadas no se borran</div>
+    <div class="field" style="margin-bottom:6px">
+      <input class="input" id="sub-search" type="text" placeholder="Buscar suplente..." autocomplete="off" oninput="document.getElementById('sub-list').innerHTML=document.getElementById('sub-search')._buildList(this.value)" style="margin-bottom:0">
+    </div>
+    <div id="sub-list" style="max-height:45vh;overflow-y:auto;border:1px solid var(--border);border-radius:8px">${buildList('')}</div>`;
+  document.getElementById('sub-search')._buildList = buildList;
+  document.getElementById('mr-submit').textContent = 'Cancelar';
+  document.getElementById('mr-submit').onclick = () => closeModal('modal-match-result');
+  openModal('modal-match-result');
+}
+
+async function confirmSubstitute(tId, teamId, oldPid, newPid) {
+  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const team = (t?.teams||[]).find(x=>x.id===teamId);
+  if(!t || !team) return;
+  const oldP = DB.players.find(x=>x.id===oldPid);
+  const newP = DB.players.find(x=>x.id===newPid);
+  const ok = await appConfirm(`¿Sustituir a ${oldP?.name||'?'} por ${newP?.name||'?'}?`);
+  if(!ok) return;
+  const idx = (team.members||[]).indexOf(oldPid);
+  if(idx === -1) return;
+  team.members[idx] = newPid;
+  if(t.sextScores?.[teamId]?.[oldPid] && !t.sextScores[teamId][newPid]) {
+    t.sextScores[teamId][newPid] = Array(t.sextScores[teamId][oldPid].length).fill(0);
+  }
+  if(t.sumaPalosMember?.[teamId]?.[oldPid] && !t.sumaPalosMember[teamId][newPid]) {
+    t.sumaPalosMember[teamId][newPid] = Array(t.sumaPalosMember[teamId][oldPid].length).fill(0);
+  }
+  const names = (team.members||[]).map(pid => { const p = DB.players.find(x=>x.id===pid); return p ? p.name.split(',')[0].trim().split(' ')[0] : '?'; });
+  team.name = names.join(' & ');
+  save(); closeModal('modal-match-result'); renderTournamentDetail();
+  toast(`✓ ${oldP?.name||'?'} → ${newP?.name||'?'}`);
 }
 
 // ── FASES TAB (individual: clasificación por suma de palos, ronda a ronda) ──
