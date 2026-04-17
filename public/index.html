@@ -1524,7 +1524,7 @@ function buildStats() {
       <div class="dist-lbl">${bk.l}</div>
     </div>`).join('');
 
-  const topScores = active.flatMap(p=>allScoresOf(p).map(s=>({s,name:p.name,cat:p.cat}))).sort((a,b)=>b.s-a.s).slice(0,8);
+  const topScores = active.flatMap(p=>realAllScoresOf(p).map(s=>({s,name:p.name,cat:p.cat}))).sort((a,b)=>b.s-a.s).slice(0,10);
   const topRows = topScores.map((t,i)=>`
     <div class="top-row">
       <div class="top-pos">${i+1}</div>

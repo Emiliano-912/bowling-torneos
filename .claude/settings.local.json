@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(git -c user.email=emiripolldl99@gmail.com -c user.name=Emiliano-912 commit -m ' *)",
+      "Bash(git -c user.email=emiripolldl99@gmail.com -c user.name=Emiliano-912 commit --allow-empty -m ' *)",
+      "Bash(git config *)",
+      "WebFetch(domain:bowlinglibertad2026.com)",
+      "WebFetch(domain:www.bowlinglibertad2026.com)",
+      "WebFetch(domain:bowling-torneos.onrender.com)"
+    ]
+  }
+}
