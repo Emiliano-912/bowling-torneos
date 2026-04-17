@@ -25,7 +25,12 @@ function readData() {
 }
 
 function writeData(data) {
-  fs.writeFileSync(DATA_FILE, JSON.stringify(data));
+  try {
+    fs.writeFileSync(DATA_FILE, JSON.stringify(data));
+  } catch(e) {
+    console.error('Error escribiendo datos:', e.message);
+    throw e;
+  }
 }
 
 // ── Password storage ──────────────────────────────────────────────────
@@ -113,6 +118,9 @@ app.post('/api/import', (req, res) => {
   const { password, data } = req.body;
   if (!verifyPassword(password)) {
     return res.status(401).json({ ok: false, error: 'Contraseña incorrecta' });
+  }
+  if (!data || !Array.isArray(data.players) || !Array.isArray(data.tournaments)) {
+    return res.status(400).json({ ok: false, error: 'Backup inválido: faltan players o tournaments' });
   }
   try {
     writeData(data);

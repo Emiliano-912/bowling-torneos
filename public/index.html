@@ -1022,7 +1022,7 @@ function save() {
         }).catch(()=>{});
       }
     }).catch(() => {
-      // Offline — data saved locally, will sync later
+      toast('⚠ Sin conexión — datos guardados solo en local','err');
     });
   }
 }
@@ -1864,6 +1864,7 @@ function openDetail(playerId, filterTrnId) {
   });
 
   document.getElementById('det-undo')?.addEventListener('click', async ()=>{
+    if(!p.scores.length) { toast('No hay líneas para deshacer','err'); return; }
     const ok = await appConfirm(`¿Eliminar la última línea de ${p.name}? (${p.scores[p.scores.length-1]} pinos)`);
     if(!ok) return;
     p.scores.pop(); save(); renderView();
