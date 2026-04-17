@@ -1000,6 +1000,27 @@ async function loadFromServer() {
   return false;
 }
 
+let _tournamentSnapshot = null;
+let _snapshotTournamentId = null;
+
+function snapshotTournament(tId) {
+  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  if(!t) return;
+  _snapshotTournamentId = tId;
+  _tournamentSnapshot = JSON.parse(JSON.stringify(t));
+}
+
+function undoTournament() {
+  if(!_tournamentSnapshot || !_snapshotTournamentId) { toast('No hay cambios para deshacer','err'); return; }
+  const idx = (DB.tournaments||[]).findIndex(x=>x.id===_snapshotTournamentId);
+  if(idx === -1) { toast('Torneo no encontrado','err'); return; }
+  DB.tournaments[idx] = _tournamentSnapshot;
+  _tournamentSnapshot = null;
+  _snapshotTournamentId = null;
+  save(); renderTournamentDetail();
+  toast('↩ Cambios deshechos');
+}
+
 function save() {
   saveLocal();
   invalidateScoreCache();
@@ -2727,11 +2748,14 @@ function renderTournamentDetail() {
     : t.mode==='mixto' ? 'Mixto por modalidades'
     : t.mode==='sexteto' ? 'Suma de palos'
     : ({zona:'Estilo Aniversario', eliminacion:'Eliminación directa','zona+elim':'Zonas + Eliminación', multifase:'Por rondas','suma+bracket':'Pica-Pica','suma+zona':'Pica-Pica + Final','zona_dia':'Zona de un día'}[t.format]||t.format);
+  const undoBtn = (isTournamentAdmin() && _tournamentSnapshot && _snapshotTournamentId === t.id)
+    ? `<button onclick="undoTournament()" class="btn btn-ghost btn-sm" style="font-size:.68rem;padding:2px 8px;color:#f59e0b;border-color:rgba(245,158,11,.4)">↩ Deshacer</button>` : '';
   document.getElementById('td-badges').innerHTML = `
     <span class="trn-type-badge zona">${fmtLabel}</span>
     <span class="trn-status ${t.status||'pendiente'}">${t.status||'pendiente'}</span>
     <span style="font-size:.72rem;color:var(--muted)">${modLabel}</span>
     ${t.cat&&t.cat!=='TODOS'?`<span class="badge ${CAT_CLS[t.cat]||''}">${t.cat}</span>`:''}
+    ${undoBtn}
   `;
 
   // Tabs
@@ -3215,6 +3239,7 @@ function actUpdatePreview(total, maxSize) {
 function autoAssignZones(tId) {
   const t = (DB.tournaments||[]).find(x=>x.id===tId);
   if(!t||!t.zones) return;
+  snapshotTournament(tId);
   const entries = (t.mode==='equipo'||t.mode==='trio'||t.mode==='sexteto') ? (t.teams||[]).map(x=>x.id) : (t.participants||[]);
   if(!entries.length) { toast('No hay participantes para asignar','err'); return; }
   const shuffled = [...entries].sort(()=>Math.random()-.5);
@@ -5967,6 +5992,7 @@ function autoFillMFZone(tId, ri, zi) {
 }
 
 function autoFillMFFase(tId) {
+  snapshotTournament(tId);
   const t = (DB.tournaments||[]).find(x=>x.id===tId);
   if(!t) return;
   const ri = t.rondaActiva ?? (t.rondas||[]).length-1;
@@ -6014,6 +6040,7 @@ function randPalos(min=100, max=280) {
 
 // ── Auto-fill Zonas ───────────────────────────────────────────────────
 function autoFillZonas(tId) {
+  snapshotTournament(tId);
   const t = (DB.tournaments||[]).find(x=>x.id===tId);
   if(!t||!isTournamentAdmin()) return;
 
@@ -6068,6 +6095,7 @@ function autoFillZonas(tId) {
 
 // ── Auto-fill Bracket ─────────────────────────────────────────────────
 function autoFillBracket(tId) {
+  snapshotTournament(tId);
   const t = (DB.tournaments||[]).find(x=>x.id===tId);
   if(!t||!isTournamentAdmin()) return;
   const rounds = t.bracketRounds||[];
@@ -6756,6 +6784,7 @@ function openEditZoneAdvanceCfg(tId) {
 
 // ── Open "Avanzar a siguiente fase" modal ──────────────────────────────
 function confirmarFinalizarTorneo(tId) {
+  snapshotTournament(tId);
   const t = (DB.tournaments||[]).find(x=>x.id===tId);
   if(!t||!isTournamentAdmin()) return;
   document.getElementById('mr-body').innerHTML = `
@@ -6779,6 +6808,7 @@ function confirmarFinalizarTorneo(tId) {
 }
 
 function openAvanzarZonas(tId) {
+  snapshotTournament(tId);
   const t = (DB.tournaments||[]).find(x=>x.id===tId);
   if(!t||!isTournamentAdmin()) return;
 
@@ -7351,6 +7381,7 @@ function buildBracketTab(t) {
 
 // ── Start bracket ──────────────────────────────────────────────────────
 function startBracketFromZones(tId) {
+  snapshotTournament(tId);
   const t = (DB.tournaments||[]).find(x=>x.id===tId);
   if(!t) return;
   const { direct, thirds } = getZoneClassified(t);
@@ -8152,6 +8183,7 @@ function sextUpdateLine(el) {
 }
 
 function sextAutoFill(tId) {
+  snapshotTournament(tId);
   const t = (DB.tournaments||[]).find(x=>x.id===tId);
   if(!t) return;
   if(!t.sextScores) t.sextScores = {};
@@ -8330,6 +8362,7 @@ function spUpdateLine(el) {
 }
 
 function spAutoFill(tId) {
+  snapshotTournament(tId);
   const t = (DB.tournaments||[]).find(x=>x.id===tId);
   if(!t||!isTournamentAdmin()) return;
   if(!t.sumaPalosMember) t.sumaPalosMember = {};
@@ -8988,6 +9021,7 @@ function zfiUpdate(el) {
 }
 
 function zfiAutoFill(tId) {
+  snapshotTournament(tId);
   const t = (DB.tournaments||[]).find(x=>x.id===tId);
   if(!t||!t.zonaFinal||!isTournamentAdmin()) return;
   const zf = t.zonaFinal;
@@ -9135,6 +9169,7 @@ function openZonaFinalMatch(tId, preA, preB) {
 }
 
 function autoFillZonaFinal(tId) {
+  snapshotTournament(tId);
   const t = (DB.tournaments||[]).find(x=>x.id===tId);
   if(!t||!t.zonaFinal||!isTournamentAdmin()) return;
 
