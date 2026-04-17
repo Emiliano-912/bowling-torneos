@@ -2932,12 +2932,17 @@ function buildTeamsTab(t) {
   const teamLabel    = t.mode==='trio' ? 'Trío' : t.mode==='sexteto' ? 'Sexteto' : 'Pareja';
   const teamsLabel   = t.mode==='trio' ? 'tríos' : t.mode==='sexteto' ? 'sextetos' : 'parejas';
   const addTeamBtn   = isTournamentAdmin() ? `<button class="btn btn-accent btn-sm" id="td-add-team">+ ${teamLabel}</button>` : '';
-  const autoTeamBtn  = isTournamentAdmin() ? `<button class="btn btn-ghost btn-sm" id="td-auto-teams">🎲 Auto-crear ${teamsLabel}</button>` : '';
-  const autoZoneBtn  = isTournamentAdmin() && hasZones && teams.length ? `<button class="btn btn-ghost btn-sm" id="td-auto-zones">🔀 Auto-zonas</button>` : '';
+  const autoMenuItems = [];
+  if(isTournamentAdmin()) autoMenuItems.push(`<div onclick="event.stopPropagation();this.parentElement.style.display='none';confirmAutoTeams('${t.id}')" style="padding:8px 12px;cursor:pointer;font-size:.76rem;white-space:nowrap;border-bottom:1px solid var(--border);transition:background .1s" onmouseover="this.style.background='var(--surface)'" onmouseout="this.style.background='transparent'">🎲 Auto-crear ${teamsLabel}</div>`);
+  if(isTournamentAdmin() && hasZones && teams.length) autoMenuItems.push(`<div onclick="event.stopPropagation();this.parentElement.style.display='none';confirmAutoZones('${t.id}')" style="padding:8px 12px;cursor:pointer;font-size:.76rem;white-space:nowrap;transition:background .1s" onmouseover="this.style.background='var(--surface)'" onmouseout="this.style.background='transparent'">🔀 Auto-zonas</div>`);
+  const autoMenuBtn = isTournamentAdmin() && autoMenuItems.length ? `<div style="position:relative;display:inline-block">
+    <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();const m=this.nextElementSibling;m.style.display=m.style.display==='block'?'none':'block'" style="font-size:.72rem;padding:3px 8px">⚙️ Auto</button>
+    <div data-auto-menu style="display:none;position:absolute;top:100%;left:0;z-index:99;background:var(--card);border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.4);min-width:160px;margin-top:4px">${autoMenuItems.join('')}</div>
+  </div>` : '';
 
   if(!teams.length) {
-    return `<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center">${addTeamBtn}${autoTeamBtn}${buildStatusBtn(t)}</div>
-    <div class="empty"><div class="empty-icon">👥</div><div class="empty-title">Sin ${teamsLabel}</div><div class="empty-sub">Creá ${teamsLabel} manualmente o usá 🎲 Auto-crear ${teamsLabel}</div></div>`;
+    return `<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center">${addTeamBtn}${autoMenuBtn}${buildStatusBtn(t)}</div>
+    <div class="empty"><div class="empty-icon">👥</div><div class="empty-title">Sin ${teamsLabel}</div><div class="empty-sub">Creá ${teamsLabel} manualmente o usá ⚙️ Auto</div></div>`;
   }
 
   const rows = teams.map((team, ti) => {
@@ -2991,7 +2996,7 @@ function buildTeamsTab(t) {
 
   const hcapCatBtn = isTournamentAdmin() ? `<button class="btn btn-ghost btn-sm" id="td-hcap-cat">🏷 HCP por categoría</button><button class="btn btn-ghost btn-sm" id="td-hcap-player">🏷 HCP por jugador</button>` : '';
 
-  return `<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center">${addTeamBtn}${autoTeamBtn}${autoZoneBtn}${hcapCatBtn}${buildStatusBtn(t)}</div>
+  return `<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center">${addTeamBtn}${autoMenuBtn}${hcapCatBtn}${buildStatusBtn(t)}</div>
   <div class="table-wrap">${rows}</div>`;
 }
 
@@ -3135,12 +3140,14 @@ function addAllParticipants(tId) {
   save(); renderTournamentDetail(); toast(`✓ ${toAdd.length} jugador${toAdd.length!==1?'es':''} agregado${toAdd.length!==1?'s':''}`);
 }
 
+document.addEventListener('click', () => {
+  document.querySelectorAll('[data-auto-menu]').forEach(m => m.style.display = 'none');
+});
+
 function bindTeamsTab(t) {
   document.getElementById('td-hcap-cat')?.addEventListener('click', () => openHcapByCategory(t.id));
   document.getElementById('td-hcap-player')?.addEventListener('click', () => openHcapByPlayer(t.id));
   document.getElementById('td-add-team')?.addEventListener('click', () => openAddTeam(t.id));
-  document.getElementById('td-auto-teams')?.addEventListener('click', () => openAutoCreateTeams(t.id));
-  document.getElementById('td-auto-zones')?.addEventListener('click', () => autoAssignZones(t.id));
   document.getElementById('td-status-sel')?.addEventListener('change', e => {
     t.status = e.target.value; save(); renderTournamentDetail(); toast('✓ Estado actualizado');
   });
@@ -3234,6 +3241,21 @@ function actUpdatePreview(total, maxSize) {
   const size  = parseInt(document.getElementById('act-size')?.value)||maxSize;
   const el = document.getElementById('act-total');
   if(el) el.textContent = Math.min(count, Math.floor(total/size));
+}
+
+async function confirmAutoTeams(tId) {
+  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  if(!t) return;
+  const label = t.mode==='trio'?'tríos':t.mode==='sexteto'?'sextetos':'parejas';
+  const ok = await appConfirm(`¿Auto-crear ${label}? Esto puede reorganizar los equipos actuales.`);
+  if(!ok) return;
+  openAutoCreateTeams(tId);
+}
+
+async function confirmAutoZones(tId) {
+  const ok = await appConfirm('¿Auto-asignar zonas? Esto borrará las asignaciones y resultados actuales.');
+  if(!ok) return;
+  autoAssignZones(tId);
 }
 
 function autoAssignZones(tId) {
