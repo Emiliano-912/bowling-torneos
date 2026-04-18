@@ -1048,14 +1048,21 @@ function save() {
   }
 }
 
-// Migrate: ensure archived phases have member_pids on all matches
+// Migrate: ensure archived phases have teamMembers for all teams and member_pids on matches
 function migrateArchivedPids() {
   let changed = false;
   (DB.tournaments||[]).forEach(t => {
     if(t.mode !== 'equipo' && t.mode !== 'trio') return;
     (t.zonasFase||[]).forEach(fase => {
+      if(!fase.teamMembers) fase.teamMembers = {};
+      // Fill teamMembers for teams that don't have it yet (use current members)
+      (t.teams||[]).forEach(team => {
+        if(!fase.teamMembers[team.id]) {
+          fase.teamMembers[team.id] = [...(team.members||[])];
+          changed = true;
+        }
+      });
       const tm = fase.teamMembers;
-      if(!tm) return;
       (fase.zones||[]).forEach(z => {
         Object.values(z.matches||{}).forEach(m => {
           if(!m || m.pts_a === undefined) return;
@@ -1065,7 +1072,7 @@ function migrateArchivedPids() {
       });
     });
   });
-  if(changed) saveLocal();
+  if(changed) save();
 }
 
 // Init: load from server on startup
@@ -1256,8 +1263,7 @@ function tournamentPlayerLines(t, playerId) {
             else if(m.id_b === team.id) { ms = m.member_scores_b; pids = m.member_pids_b; }
             if(!ms) return;
             const ref = pids || archMembers;
-            if(!ref) return;
-            const idx = ref.indexOf(playerId);
+            const idx = ref ? ref.indexOf(playerId) : memberIdx;
             if(idx >= 0 && ms[idx] > 0) lines.push(ms[idx]);
           });
         });
