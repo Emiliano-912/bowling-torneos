@@ -1048,9 +1048,29 @@ function save() {
   }
 }
 
+// Migrate: ensure archived phases have member_pids on all matches
+function migrateArchivedPids() {
+  let changed = false;
+  (DB.tournaments||[]).forEach(t => {
+    if(t.mode !== 'equipo' && t.mode !== 'trio') return;
+    (t.zonasFase||[]).forEach(fase => {
+      const tm = fase.teamMembers;
+      if(!tm) return;
+      (fase.zones||[]).forEach(z => {
+        Object.values(z.matches||{}).forEach(m => {
+          if(!m || m.pts_a === undefined) return;
+          if(m.id_a && tm[m.id_a] && !m.member_pids_a) { m.member_pids_a = [...tm[m.id_a]]; changed = true; }
+          if(m.id_b && tm[m.id_b] && !m.member_pids_b) { m.member_pids_b = [...tm[m.id_b]]; changed = true; }
+        });
+      });
+    });
+  });
+  if(changed) saveLocal();
+}
+
 // Init: load from server on startup
 document.addEventListener('DOMContentLoaded', () => {
-  loadFromServer().then(() => renderView());
+  loadFromServer().then(() => { migrateArchivedPids(); renderView(); });
 });
 
 // ── UTILS ─────────────────────────────────────────────────────────────
@@ -1228,7 +1248,6 @@ function tournamentPlayerLines(t, playerId) {
       // Archived phases zones
       (t.zonasFase||[]).forEach(fase => {
         const archMembers = fase.teamMembers?.[team.id];
-        const archIdx = archMembers ? archMembers.indexOf(playerId) : memberIdx;
         (fase.zones||[]).forEach(z => {
           Object.values(z.matches||{}).forEach(m => {
             if(!m || m.pts_a === undefined) return;
@@ -1236,7 +1255,9 @@ function tournamentPlayerLines(t, playerId) {
             if(m.id_a === team.id) { ms = m.member_scores_a; pids = m.member_pids_a; }
             else if(m.id_b === team.id) { ms = m.member_scores_b; pids = m.member_pids_b; }
             if(!ms) return;
-            const idx = pids ? pids.indexOf(playerId) : archIdx;
+            const ref = pids || archMembers;
+            if(!ref) return;
+            const idx = ref.indexOf(playerId);
             if(idx >= 0 && ms[idx] > 0) lines.push(ms[idx]);
           });
         });
