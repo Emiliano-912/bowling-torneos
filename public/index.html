@@ -6911,18 +6911,23 @@ function openAvanzarZonas(tId) {
   const t = (DB.tournaments||[]).find(x=>x.id===tId);
   if(!t||!isTournamentAdmin()) return;
 
-  const clsN = t.clasificadosPorZona||2;
-  const clsT = t.mejoresTerceros||0;
-  const direct = [], thirds = [];
-  (t.zones||[]).forEach(z => {
-    const sorted = [...(z.entries||[])].sort((a,b)=>b.pts-a.pts||b.pinesF-a.pinesF||getEntryHcap(t,a.id)-getEntryHcap(t,b.id)||(a.spread||0)-(b.spread||0));
-    sorted.forEach((e,i) => {
-      if(i < clsN) direct.push(e.id);
-      else if(i === clsN) thirds.push({id:e.id, palos:e.pinesF});
+  let classified;
+  if((t.zoneClassified||[]).length > 0) {
+    classified = [...t.zoneClassified];
+  } else {
+    const clsN = t.clasificadosPorZona||2;
+    const clsT = t.mejoresTerceros||0;
+    const direct = [], thirds = [];
+    (t.zones||[]).forEach(z => {
+      const sorted = [...(z.entries||[])].sort((a,b)=>b.pts-a.pts||b.pinesF-a.pinesF||getEntryHcap(t,a.id)-getEntryHcap(t,b.id)||(a.spread||0)-(b.spread||0));
+      sorted.forEach((e,i) => {
+        if(i < clsN) direct.push(e.id);
+        else if(i === clsN) thirds.push({id:e.id, palos:e.pinesF});
+      });
     });
-  });
-  thirds.sort((a,b)=>b.palos-a.palos||getEntryHcap(t,a.id)-getEntryHcap(t,b.id)||(a.spread||0)-(b.spread||0));
-  const classified = [...direct, ...thirds.slice(0,clsT).map(x=>x.id)];
+    thirds.sort((a,b)=>b.palos-a.palos||getEntryHcap(t,a.id)-getEntryHcap(t,b.id)||(a.spread||0)-(b.spread||0));
+    classified = [...direct, ...thirds.slice(0,clsT).map(x=>x.id)];
+  }
   const maxCls = classified.length;
   const getName = id => {
     const team = (t.teams||[]).find(x=>x.id===id);
@@ -7487,8 +7492,13 @@ function startBracketFromZones(tId) {
   snapshotTournament(tId);
   const t = (DB.tournaments||[]).find(x=>x.id===tId);
   if(!t) return;
-  const { direct, thirds } = getZoneClassified(t);
-  const all = [...direct, ...thirds];
+  let all;
+  if((t.zoneClassified||[]).length > 0) {
+    all = [...t.zoneClassified];
+  } else {
+    const { direct, thirds } = getZoneClassified(t);
+    all = [...direct, ...thirds];
+  }
   if(all.length < 2) { toast('No hay suficientes clasificados','err'); return; }
 
   const items = all.map(id => ({id, label: getEntryName(t,id), detail:''}));
