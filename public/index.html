@@ -6487,6 +6487,7 @@ function buildZonasTab(t) {
         <div style="font-size:.7rem;color:var(--muted)">Clasifican: <strong style="color:var(--text)">${clsText}</strong> → <strong style="color:var(--accent)">${total} ${t.mode==='trio'?'tríos':t.mode==='sexteto'?'sextetos':'parejas'} al pica-pica</strong></div>
       </div>
       ${isTournamentAdmin()?`
+      <button class="btn btn-ghost btn-sm" onclick="openMarkZoneClassified('${t.id}')">✋ Marcar clasificados</button>
       <button class="btn btn-ghost btn-sm" onclick="openEditZoneClassif('${t.id}')">⚙️ Configurar</button>
       <button class="btn btn-accent btn-sm" onclick="startBracketFromZones('${t.id}')">⚔️ Iniciar pica-pica</button>`:''}
     </div>`;
@@ -6567,12 +6568,17 @@ function buildZonasTab(t) {
         return `<td class="rr-cell ${cls}" ${click}><div class="rr-cell-inner"><span class="rr-cell-pts">${res.pts_row}</span><span class="rr-cell-palos">${res.pines_row}</span></div></td>`;
       }).join('');
       const pos = rowEntry.pos||'—';
-      const posClass = pos===1?'rr-pos-gold':pos===2?'rr-pos-silver':pos===3?'rr-pos-bronze':'rr-pos';
       const clsN = t.clasificadosPorZona||2;
-      const classifDot = (t.format==='zona+elim' && typeof pos==='number' && pos<=clsN)
+      const hasManualCls2 = (t.zoneClassified||[]).length > 0;
+      const isClassified2 = hasManualCls2 ? t.zoneClassified.includes(rowEntry.id) : (t.format==='zona+elim' && typeof pos==='number' && pos<=clsN);
+      const isEliminated2 = hasManualCls2 && !isClassified2;
+      const classifDot = isClassified2
         ? `<span style="display:inline-block;width:5px;height:5px;border-radius:50%;background:#86efac;margin-left:3px;vertical-align:middle"></span>` : '';
-      return `<tr>
-        <td class="rr-name-cell"><div class="rr-name">${shortNameFor(rowEntry.id)}${classifDot}</div></td>
+      const elimMark2 = isEliminated2
+        ? `<span style="font-size:.55rem;color:#f87171;margin-left:4px;font-weight:700">ELIM</span>` : '';
+      const rowStyle2 = isEliminated2 ? 'opacity:.45;' : '';
+      return `<tr style="${rowStyle2}">
+        <td class="rr-name-cell"><div class="rr-name">${shortNameFor(rowEntry.id)}${classifDot}${elimMark2}</div></td>
         ${crossCells}
       </tr>`;
     }).join('');
@@ -6594,13 +6600,19 @@ function buildZonasTab(t) {
       const pos = rowEntry.pos||'—';
       const posClass = pos===1?'rr-pos-gold':pos===2?'rr-pos-silver':pos===3?'rr-pos-bronze':'rr-pos';
       const clsN = clsNForRender;
-      const classifDot = (t.format==='zona+elim' && typeof pos==='number' && pos<=clsN)
+      const hasManualCls = (t.zoneClassified||[]).length > 0;
+      const isClassified = hasManualCls ? t.zoneClassified.includes(rowEntry.id) : (t.format==='zona+elim' && typeof pos==='number' && pos<=clsN);
+      const isEliminated = hasManualCls && !isClassified;
+      const classifDot = isClassified
         ? `<span style="display:inline-block;width:5px;height:5px;border-radius:50%;background:#86efac;margin-left:3px;vertical-align:middle"></span>` : '';
+      const elimMark = isEliminated
+        ? `<span style="font-size:.55rem;color:#f87171;margin-left:4px;font-weight:700">ELIM</span>` : '';
+      const rowStyle = isEliminated ? 'opacity:.45;' : '';
       const reorderBtns = (!viewingArchivedFase && !zoneHasMatches && isTournamentAdmin())
         ? `<span style="display:inline-flex;flex-direction:column;gap:0;margin-right:3px;flex-shrink:0">${ri>0?`<button onclick="event.stopPropagation();swapZoneEntry('${t.id}','${z.id}',${ri},${ri-1})" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.55rem;padding:0;line-height:1" title="Subir">▲</button>`:'<span style="width:10px;display:inline-block"></span>'}${ri<entries.length-1?`<button onclick="event.stopPropagation();swapZoneEntry('${t.id}','${z.id}',${ri},${ri+1})" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.55rem;padding:0;line-height:1" title="Bajar">▼</button>`:'<span style="width:10px;display:inline-block"></span>'}</span>`
         : '';
-      return `<tr>
-        <td class="rr-name-cell"><div class="rr-name">${reorderBtns}${shortNameFor(rowEntry.id)}${classifDot}</div></td>
+      return `<tr style="${rowStyle}">
+        <td class="rr-name-cell"><div class="rr-name">${reorderBtns}${shortNameFor(rowEntry.id)}${classifDot}${elimMark}</div></td>
         ${crossCells}
         <td class="rr-total"><div class="rr-cell-inner"><span class="rr-cell-pts" style="color:var(--accent)">${pts}</span><span class="rr-palos-sum">${palosF}</span></div></td>
         <td class="rr-pos-cell ${posClass}">${pos}</td>
@@ -6658,12 +6670,18 @@ function buildZonasTab(t) {
     const getTeamName = id => (t.teams||[]).find(x=>x.id===id)?.name || '?';
     const clsText = `${clsN} por zona${clsT>0?' + '+clsT+' clasif. por palos':''}`;
 
+    const markBtn = `<button class="btn btn-ghost btn-sm" onclick="openMarkZoneClassified('${t.id}')">✋ Marcar clasificados</button>`;
+    const markedN = (t.zoneClassified||[]).length;
+    const markedInfo = markedN > 0 ? `<div style="font-size:.62rem;color:#86efac;margin-bottom:4px">✓ ${markedN} clasificados marcados</div>` : '';
+
     if(allComplete) {
       avanzarPanel = `<div style="margin-top:16px;padding:14px 16px;background:linear-gradient(135deg,rgba(56,189,248,.1),rgba(99,102,241,.06));border:1.5px solid rgba(56,189,248,.35);border-radius:12px">
         <div style="font-size:.8rem;font-weight:700;color:#38bdf8;margin-bottom:4px">✅ Fase completada</div>
+        ${markedInfo}
         <div style="font-size:.68rem;color:var(--muted);margin-bottom:4px">Clasificación: <strong style="color:var(--text)">${clsText}</strong> → <strong style="color:var(--accent)">${classified.length} ${t.mode==='trio'?'tríos':t.mode==='sexteto'?'sextetos':'parejas'}</strong></div>
         <div style="font-size:.68rem;color:var(--muted);margin-bottom:10px;line-height:1.5">${classified.map(getTeamName).join(' · ')||'—'}</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
+          ${markBtn}
           <button class="btn btn-ghost btn-sm" onclick="openEditZoneAdvanceCfg('${t.id}')">⚙️ Clasificación (${clsText})</button>
           <button class="btn btn-accent btn-sm" onclick="openAvanzarZonas('${t.id}')">➡️ Avanzar a siguiente fase</button>
           <button class="btn btn-ghost btn-sm" style="color:#f87171;border-color:rgba(248,113,113,.4)" onclick="confirmarFinalizarTorneo('${t.id}')">🏁 Finalizar torneo</button>
@@ -6675,6 +6693,7 @@ function buildZonasTab(t) {
           <span style="font-size:.68rem;color:#3b82f6">⚠️ ${pending} partido${pending>1?'s':''} pendiente${pending>1?'s':''}</span>
           <span style="font-size:.62rem;color:var(--muted);margin-left:8px">Clasificarán: ${clsText}</span>
         </div>
+        ${markBtn}
         <button class="btn btn-ghost btn-sm" onclick="openEditZoneAdvanceCfg('${t.id}')">⚙️ Clasificación</button>
         <button class="btn btn-ghost btn-sm" onclick="openAvanzarZonas('${t.id}')">🔒 Avanzar igual</button>
         <button class="btn btn-ghost btn-sm" style="color:#f87171;border-color:rgba(248,113,113,.4)" onclick="confirmarFinalizarTorneo('${t.id}')">🏁 Finalizar torneo</button>
@@ -6865,6 +6884,26 @@ function confirmarFinalizarTorneo(tId) {
     toast('🏁 Torneo finalizado');
   };
   openModal('modal-match-result');
+}
+
+function openMarkZoneClassified(tId) {
+  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  if(!t||!isTournamentAdmin()) return;
+  const clsN = t.clasificadosPorZona || 2;
+  const allEntries = [];
+  (t.zones||[]).forEach(z => {
+    const sorted = [...(z.entries||[])].sort((a,b) => b.pts-a.pts || b.pinesF-a.pinesF);
+    sorted.forEach((e,i) => {
+      const name = getEntryName(t, e.id);
+      allEntries.push({ id: e.id, label: `${z.name}: ${name}`, detail: `${e.pts}pts · ${e.pinesF}p`, zone: z.name, pos: i+1 });
+    });
+  });
+  const pre = t.zoneClassified || allEntries.filter(e => e.pos <= clsN).map(e => e.id);
+  openSelectAdvancingModal(t, allEntries, pre, (selected) => {
+    t.zoneClassified = selected;
+    save(); renderTournamentDetail();
+    toast(`✓ ${selected.length} clasificados marcados`);
+  }, 'Marcar clasificados / eliminados');
 }
 
 function openAvanzarZonas(tId) {
