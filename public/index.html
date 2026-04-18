@@ -1050,29 +1050,7 @@ function save() {
 
 // Migrate: ensure archived phases have teamMembers for all teams and member_pids on matches
 function migrateArchivedPids() {
-  let changed = false;
-  (DB.tournaments||[]).forEach(t => {
-    if(t.mode !== 'equipo' && t.mode !== 'trio') return;
-    (t.zonasFase||[]).forEach(fase => {
-      if(!fase.teamMembers) fase.teamMembers = {};
-      // Fill teamMembers for teams that don't have it yet (use current members)
-      (t.teams||[]).forEach(team => {
-        if(!fase.teamMembers[team.id]) {
-          fase.teamMembers[team.id] = [...(team.members||[])];
-          changed = true;
-        }
-      });
-      const tm = fase.teamMembers;
-      (fase.zones||[]).forEach(z => {
-        Object.values(z.matches||{}).forEach(m => {
-          if(!m || m.pts_a === undefined) return;
-          if(m.id_a && tm[m.id_a] && !m.member_pids_a) { m.member_pids_a = [...tm[m.id_a]]; changed = true; }
-          if(m.id_b && tm[m.id_b] && !m.member_pids_b) { m.member_pids_b = [...tm[m.id_b]]; changed = true; }
-        });
-      });
-    });
-  });
-  if(changed) save();
+  // No auto-fill: snapshots solo se crean al archivar fases o al sustituir con 🔄
 }
 
 // Init: load from server on startup
@@ -1252,25 +1230,22 @@ function tournamentPlayerLines(t, playerId) {
   } else if((t.mode === 'equipo' || t.mode === 'trio')) {
     (t.teams||[]).forEach(team => {
       const memberIdx = (team.members||[]).indexOf(playerId);
-      const subs = team.substitutions || [];
-      const wasSubbedIn = subs.some(s => s.newPid === playerId);
-      const subOut = subs.find(s => s.oldPid === playerId);
-      const archIdx = subOut ? subOut.idx : memberIdx;
 
-      // Archived phases: solo si el jugador NO fue un suplente que entró después
-      if(!wasSubbedIn && archIdx >= 0) {
-        (t.zonasFase||[]).forEach(fase => {
-          (fase.zones||[]).forEach(z => {
-            Object.values(z.matches||{}).forEach(m => {
-              if(!m || m.pts_a === undefined) return;
-              let ms = null;
-              if(m.id_a === team.id) ms = m.member_scores_a;
-              else if(m.id_b === team.id) ms = m.member_scores_b;
-              if(ms && ms[archIdx] > 0) lines.push(ms[archIdx]);
-            });
+      // Fases archivadas: usar snapshot teamMembers para saber quién jugó
+      (t.zonasFase||[]).forEach(fase => {
+        const snap = fase.teamMembers?.[team.id];
+        const archIdx = snap ? snap.indexOf(playerId) : memberIdx;
+        if(archIdx < 0) return;
+        (fase.zones||[]).forEach(z => {
+          Object.values(z.matches||{}).forEach(m => {
+            if(!m || m.pts_a === undefined) return;
+            let ms = null;
+            if(m.id_a === team.id) ms = m.member_scores_a;
+            else if(m.id_b === team.id) ms = m.member_scores_b;
+            if(ms && ms[archIdx] > 0) lines.push(ms[archIdx]);
           });
         });
-      }
+      });
 
       // Current zones, bracket, zona final: solo si es miembro actual
       if(memberIdx < 0) return;
@@ -3470,12 +3445,17 @@ function removeTeam(tId, teamId) {
   save(); renderTournamentDetail(); toast(t.mode==='trio'?'Trío eliminado':t.mode==='sexteto'?'Sexteto eliminado':'Pareja eliminada');
 }
 
-function removeTeamMember(tId, teamId, pid) {
+async function removeTeamMember(tId, teamId, pid) {
   const t = (DB.tournaments||[]).find(x=>x.id===tId);
   const team = (t?.teams||[]).find(x=>x.id===teamId);
   if(!team) return;
+  let msg = '¿Quitar este jugador del equipo?';
+  if((t.zonasFase||[]).length > 0) {
+    msg = '⚠️ Hay fases archivadas. Para conservar las líneas del jugador usá el botón 🔄 en su lugar.\n\n¿Quitar de todas formas?';
+  }
+  const ok = await appConfirm(msg);
+  if(!ok) return;
   team.members = (team.members||[]).filter(x=>x!==pid);
-  // Update team name based on remaining members
   const names = (team.members||[]).map(pid => { const p = DB.players.find(x=>x.id===pid); return p ? p.name.split(',')[0].trim().split(' ')[0] : '?'; }).filter(Boolean);
   if(names.length) team.name = names.join(' & ');
   save(); renderTournamentDetail(); toast('Jugador removido');
@@ -3532,6 +3512,15 @@ async function confirmSubstitute(tId, teamId, oldPid, newPid) {
   if(!ok) return;
   const idx = (team.members||[]).indexOf(oldPid);
   if(idx === -1) return;
+  // Corregir snapshots de fases archivadas ANTES del swap
+  (t.zonasFase||[]).forEach(fase => {
+    if(!fase.teamMembers) fase.teamMembers = {};
+    if(!fase.teamMembers[teamId]) {
+      fase.teamMembers[teamId] = [...team.members];
+    } else if(fase.teamMembers[teamId][idx] === newPid) {
+      fase.teamMembers[teamId][idx] = oldPid;
+    }
+  });
   // Registrar sustitución en el equipo
   team.substitutions = team.substitutions || [];
   team.substitutions.push({ oldPid, newPid, idx });
@@ -8672,32 +8661,51 @@ function buildTournamentPlayerAverages(t) {
       });
     });
   } else if((t.mode === 'equipo' || t.mode === 'trio') && t.format !== 'suma+bracket') {
-    // Collect all zones across all phases (archived + current)
-    const allZones = [
-      ...(t.zonasFase||[]).flatMap(f => f.zones||[]),
-      ...(t.zones||[])
-    ];
+    const _addLine = (pid, v, teamName) => {
+      if(v <= 0) return;
+      let row = rows.find(r=>r.pid===pid);
+      if(!row) {
+        const p = DB.players.find(x=>x.id===pid);
+        row = { pid, name: p?p.name:pid, cat: p?p.cat:'?', lines:0, total:0, avg:0, genAvg: p?.scores?.length?avgOf(p.scores):null, teamName };
+        rows.push(row);
+      }
+      row.lines++; row.total += v;
+    };
     (t.teams||[]).forEach(team => {
-      allZones.forEach(z => {
+      // Fases archivadas: usar snapshot para saber quién jugó
+      (t.zonasFase||[]).forEach(fase => {
+        const snap = fase.teamMembers?.[team.id] || team.members || [];
+        (fase.zones||[]).forEach(z => {
+          Object.values(z.matches||{}).forEach(m => {
+            if(!m || m.pts_a === undefined) return;
+            const side = m.id_a === team.id ? 'a' : m.id_b === team.id ? 'b' : null;
+            if(!side) return;
+            const memberScores = side==='a' ? (m.member_scores_a||[]) : (m.member_scores_b||[]);
+            snap.forEach((pid, i) => { _addLine(pid, memberScores[i] || 0, team.name); });
+          });
+        });
+      });
+      // Zonas actuales: usar team.members
+      (t.zones||[]).forEach(z => {
         Object.values(z.matches||{}).forEach(m => {
           if(!m || m.pts_a === undefined) return;
           const side = m.id_a === team.id ? 'a' : m.id_b === team.id ? 'b' : null;
           if(!side) return;
           const memberScores = side==='a' ? (m.member_scores_a||[]) : (m.member_scores_b||[]);
-          (team.members||[]).forEach((pid, i) => {
-            const v = memberScores[i] || 0;
-            if(v <= 0) return;
-            let row = rows.find(r=>r.pid===pid);
-            if(!row) {
-              const p = DB.players.find(x=>x.id===pid);
-              row = { pid, name: p?p.name:pid, cat: p?p.cat:'?', lines:0, total:0, avg:0, genAvg: p?.scores?.length?avgOf(p.scores):null, teamName: team.name };
-              rows.push(row);
-            }
-            row.lines++; row.total += v;
-          });
+          (team.members||[]).forEach((pid, i) => { _addLine(pid, memberScores[i] || 0, team.name); });
         });
       });
-      // Bracket matches (pica-pica) — also collect individual lines
+      // Zona final
+      if(t.zonaFinal) {
+        Object.values(t.zonaFinal.matches||{}).forEach(m => {
+          if(!m || m.pts_a === undefined) return;
+          const side = m.id_a === team.id ? 'a' : m.id_b === team.id ? 'b' : null;
+          if(!side) return;
+          const memberScores = side==='a' ? (m.member_scores_a||[]) : (m.member_scores_b||[]);
+          (team.members||[]).forEach((pid, i) => { _addLine(pid, memberScores[i] || 0, team.name); });
+        });
+      }
+      // Bracket matches
       (t.bracketRounds||[]).forEach(round => {
         (round.matches||[]).forEach(bm => {
           const side = bm.a === team.id ? 'a' : bm.b === team.id ? 'b' : null;
@@ -8707,15 +8715,7 @@ function buildTournamentPlayerAverages(t) {
             const val = ms[i];
             if(!val) return;
             const scores = Array.isArray(val) ? val.filter(v=>v>0) : (val > 0 ? [val] : []);
-            scores.forEach(v => {
-              let row = rows.find(r=>r.pid===pid);
-              if(!row) {
-                const p = DB.players.find(x=>x.id===pid);
-                row = { pid, name: p?p.name:pid, cat: p?p.cat:'?', lines:0, total:0, avg:0, genAvg: p?.scores?.length?avgOf(p.scores):null, teamName: team.name };
-                rows.push(row);
-              }
-              row.lines++; row.total += v;
-            });
+            scores.forEach(v => { _addLine(pid, v, team.name); });
           });
         });
       });
