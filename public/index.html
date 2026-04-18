@@ -1225,6 +1225,22 @@ function tournamentPlayerLines(t, playerId) {
   } else if((t.mode === 'equipo' || t.mode === 'trio')) {
     (t.teams||[]).forEach(team => {
       const memberIdx = (team.members||[]).indexOf(playerId);
+      // Archived phases zones
+      (t.zonasFase||[]).forEach(fase => {
+        const archMembers = fase.teamMembers?.[team.id];
+        const archIdx = archMembers ? archMembers.indexOf(playerId) : memberIdx;
+        (fase.zones||[]).forEach(z => {
+          Object.values(z.matches||{}).forEach(m => {
+            if(!m || m.pts_a === undefined) return;
+            let ms = null, pids = null;
+            if(m.id_a === team.id) { ms = m.member_scores_a; pids = m.member_pids_a; }
+            else if(m.id_b === team.id) { ms = m.member_scores_b; pids = m.member_pids_b; }
+            if(!ms) return;
+            const idx = pids ? pids.indexOf(playerId) : archIdx;
+            if(idx >= 0 && ms[idx] > 0) lines.push(ms[idx]);
+          });
+        });
+      });
       // Zones matches
       (t.zones||[]).forEach(z => {
         Object.values(z.matches||{}).forEach(m => {
@@ -6400,7 +6416,14 @@ function buildZonasTab(t) {
   if(!t.zones||!t.zones.length) return `<div class="empty"><div class="empty-title">Sin zonas configuradas</div></div>`;
 
   const getName = (id) => {
-    if((t.mode==='equipo'||t.mode==='trio'||t.mode==='sexteto')) return (t.teams||[]).find(x=>x.id===id)?.name || '?';
+    if((t.mode==='equipo'||t.mode==='trio'||t.mode==='sexteto')) {
+      const archMembers = (t._zonasFaseActiva >= 0 && (t.zonasFase||[])[t._zonasFaseActiva]?.teamMembers)?.[id];
+      if(archMembers) {
+        const names = archMembers.map(pid => { const p = DB.players.find(x=>x.id===pid); return p ? p.name.split(',')[0].trim().split(' ')[0] : '?'; }).filter(Boolean);
+        return names.join(' & ');
+      }
+      return (t.teams||[]).find(x=>x.id===id)?.name || '?';
+    }
     const p = DB.players.find(x=>x.id===id);
     return p ? p.name : '?';
   };
@@ -6456,6 +6479,7 @@ function buildZonasTab(t) {
   }
 
   const viewingArchivedFase = (t._zonasFaseActiva ?? -1) >= 0;
+  const archivedTeamMembers = viewingArchivedFase && (t.zonasFase||[])[t._zonasFaseActiva]?.teamMembers || null;
   const zonesToRender = viewingArchivedFase ? activeFaseZonas : t.zones;
   const clsNForRender = viewingArchivedFase ? activeFaseClsN : (t.clasificadosPorZona || 2);
 
@@ -6486,9 +6510,9 @@ function buildZonasTab(t) {
     // Parejas/Tríos/Sextetos: apilar apellido de cada integrante en líneas separadas
     const shortNameFor = id => {
       if(t.mode === 'equipo' || t.mode === 'trio' || t.mode === 'sexteto') {
-        const team = (t.teams||[]).find(x=>x.id===id);
-        if(team) {
-          return (team.members||[])
+        const members = archivedTeamMembers?.[id] || (t.teams||[]).find(x=>x.id===id)?.members;
+        if(members) {
+          return members
             .map(pid => (DB.players.find(p=>p.id===pid)?.name || '?').trim())
             .join('<br>');
         }
@@ -6884,7 +6908,9 @@ function openAvanzarZonas(tId) {
     if(advancing.length < 2) { toast('Necesitás al menos 2 equipos','err'); return; }
     // Archive old zones
     t.zonasFase = t.zonasFase || [];
-    t.zonasFase.push({ zones: t.zones, clasificadosPorZona: t.clasificadosPorZona, mejoresTerceros: t.mejoresTerceros, faseNum: (t.zonasFase.length||0)+1 });
+    const _teamSnap = {};
+    (t.teams||[]).forEach(tm => { _teamSnap[tm.id] = [...(tm.members||[])]; });
+    t.zonasFase.push({ zones: t.zones, clasificadosPorZona: t.clasificadosPorZona, mejoresTerceros: t.mejoresTerceros, faseNum: (t.zonasFase.length||0)+1, teamMembers: _teamSnap });
     _createZonaFinal(t, advancing);
     closeModal('modal-match-result');
   });
@@ -6904,7 +6930,9 @@ function openAvanzarZonas(tId) {
 
     // Archive old zones
     t.zonasFase = t.zonasFase || [];
-    t.zonasFase.push({ zones: t.zones, clasificadosPorZona: t.clasificadosPorZona, mejoresTerceros: t.mejoresTerceros, faseNum: (t.zonasFase.length||0)+1 });
+    const _teamSnap = {};
+    (t.teams||[]).forEach(tm => { _teamSnap[tm.id] = [...(tm.members||[])]; });
+    t.zonasFase.push({ zones: t.zones, clasificadosPorZona: t.clasificadosPorZona, mejoresTerceros: t.mejoresTerceros, faseNum: (t.zonasFase.length||0)+1, teamMembers: _teamSnap });
 
     // Install new zones
     t.zones = newZones;
