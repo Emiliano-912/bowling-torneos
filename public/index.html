@@ -3509,6 +3509,18 @@ async function confirmSubstitute(tId, teamId, oldPid, newPid) {
   const idx = (team.members||[]).indexOf(oldPid);
   if(idx === -1) return;
   // Guardar PIDs actuales en matches existentes para preservar líneas del jugador saliente
+  // Fases archivadas
+  (t.zonasFase||[]).forEach(fase => {
+    if(!fase.teamMembers) fase.teamMembers = {};
+    if(!fase.teamMembers[teamId]) fase.teamMembers[teamId] = [...team.members];
+    (fase.zones||[]).forEach(z => {
+      Object.values(z.matches||{}).forEach(m => {
+        if(m.id_a === teamId && !m.member_pids_a) m.member_pids_a = [...team.members];
+        if(m.id_b === teamId && !m.member_pids_b) m.member_pids_b = [...team.members];
+      });
+    });
+  });
+  // Zonas actuales
   (t.zones||[]).forEach(z => {
     Object.values(z.matches||{}).forEach(m => {
       if(m.id_a === teamId && !m.member_pids_a) m.member_pids_a = [...team.members];
