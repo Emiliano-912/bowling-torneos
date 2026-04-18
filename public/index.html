@@ -1252,44 +1252,45 @@ function tournamentPlayerLines(t, playerId) {
   } else if((t.mode === 'equipo' || t.mode === 'trio')) {
     (t.teams||[]).forEach(team => {
       const memberIdx = (team.members||[]).indexOf(playerId);
-      // Archived phases zones
-      (t.zonasFase||[]).forEach(fase => {
-        const archMembers = fase.teamMembers?.[team.id];
-        (fase.zones||[]).forEach(z => {
-          Object.values(z.matches||{}).forEach(m => {
-            if(!m || m.pts_a === undefined) return;
-            let ms = null, pids = null;
-            if(m.id_a === team.id) { ms = m.member_scores_a; pids = m.member_pids_a; }
-            else if(m.id_b === team.id) { ms = m.member_scores_b; pids = m.member_pids_b; }
-            if(!ms) return;
-            const ref = pids || archMembers;
-            const idx = ref ? ref.indexOf(playerId) : memberIdx;
-            if(idx >= 0 && ms[idx] > 0) lines.push(ms[idx]);
+      const subs = team.substitutions || [];
+      const wasSubbedIn = subs.some(s => s.newPid === playerId);
+      const subOut = subs.find(s => s.oldPid === playerId);
+      const archIdx = subOut ? subOut.idx : memberIdx;
+
+      // Archived phases: solo si el jugador NO fue un suplente que entró después
+      if(!wasSubbedIn && archIdx >= 0) {
+        (t.zonasFase||[]).forEach(fase => {
+          (fase.zones||[]).forEach(z => {
+            Object.values(z.matches||{}).forEach(m => {
+              if(!m || m.pts_a === undefined) return;
+              let ms = null;
+              if(m.id_a === team.id) ms = m.member_scores_a;
+              else if(m.id_b === team.id) ms = m.member_scores_b;
+              if(ms && ms[archIdx] > 0) lines.push(ms[archIdx]);
+            });
           });
         });
-      });
-      // Zones matches
+      }
+
+      // Current zones, bracket, zona final: solo si es miembro actual
+      if(memberIdx < 0) return;
       (t.zones||[]).forEach(z => {
         Object.values(z.matches||{}).forEach(m => {
           if(!m || m.pts_a === undefined) return;
-          let ms = null, pids = null;
-          if(m.id_a === team.id) { ms = m.member_scores_a; pids = m.member_pids_a; }
-          else if(m.id_b === team.id) { ms = m.member_scores_b; pids = m.member_pids_b; }
-          if(!ms) return;
-          const idx = pids ? pids.indexOf(playerId) : memberIdx;
-          if(idx >= 0 && ms[idx] > 0) lines.push(ms[idx]);
+          let ms = null;
+          if(m.id_a === team.id) ms = m.member_scores_a;
+          else if(m.id_b === team.id) ms = m.member_scores_b;
+          if(ms && ms[memberIdx] > 0) lines.push(ms[memberIdx]);
         });
       });
-      // Bracket matches (pica-pica)
       (t.bracketRounds||[]).forEach(round => {
         (round.matches||[]).forEach(bm => {
-          let ms = null, pids = null;
-          if(bm.a === team.id) { ms = bm.member_scores_a; pids = bm.member_pids_a; }
-          else if(bm.b === team.id) { ms = bm.member_scores_b; pids = bm.member_pids_b; }
+          let ms = null;
+          if(bm.a === team.id) ms = bm.member_scores_a;
+          else if(bm.b === team.id) ms = bm.member_scores_b;
           if(!ms) return;
-          const idx = pids ? pids.indexOf(playerId) : memberIdx;
-          if(idx >= 0 && ms[idx]) {
-            const val = ms[idx];
+          if(ms[memberIdx]) {
+            const val = ms[memberIdx];
             if(Array.isArray(val)) {
               val.forEach(v => { if(v > 0) lines.push(v); });
             } else if(val > 0) {
@@ -1298,21 +1299,17 @@ function tournamentPlayerLines(t, playerId) {
           }
         });
       });
-      // Suma de palos classification (sumaPalosMember)
       const spMember = t.sumaPalosMember?.[team.id]?.[playerId];
       if(spMember) {
         spMember.forEach(v => { if(v > 0) lines.push(v); });
       }
-      // Zona final matches
       if(t.zonaFinal) {
         Object.values(t.zonaFinal.matches||{}).forEach(m => {
           if(!m || m.pts_a === undefined) return;
-          let ms2 = null, pids2 = null;
-          if(m.id_a === team.id) { ms2 = m.member_scores_a; pids2 = m.member_pids_a; }
-          else if(m.id_b === team.id) { ms2 = m.member_scores_b; pids2 = m.member_pids_b; }
-          if(!ms2) return;
-          const idx2 = pids2 ? pids2.indexOf(playerId) : memberIdx;
-          if(idx2 >= 0 && ms2[idx2] > 0) lines.push(ms2[idx2]);
+          let ms2 = null;
+          if(m.id_a === team.id) ms2 = m.member_scores_a;
+          else if(m.id_b === team.id) ms2 = m.member_scores_b;
+          if(ms2 && ms2[memberIdx] > 0) lines.push(ms2[memberIdx]);
         });
       }
     });
@@ -3535,37 +3532,9 @@ async function confirmSubstitute(tId, teamId, oldPid, newPid) {
   if(!ok) return;
   const idx = (team.members||[]).indexOf(oldPid);
   if(idx === -1) return;
-  // Guardar PIDs actuales en matches existentes para preservar líneas del jugador saliente
-  // Fases archivadas
-  (t.zonasFase||[]).forEach(fase => {
-    if(!fase.teamMembers) fase.teamMembers = {};
-    if(!fase.teamMembers[teamId]) fase.teamMembers[teamId] = [...team.members];
-    (fase.zones||[]).forEach(z => {
-      Object.values(z.matches||{}).forEach(m => {
-        if(m.id_a === teamId && !m.member_pids_a) m.member_pids_a = [...team.members];
-        if(m.id_b === teamId && !m.member_pids_b) m.member_pids_b = [...team.members];
-      });
-    });
-  });
-  // Zonas actuales
-  (t.zones||[]).forEach(z => {
-    Object.values(z.matches||{}).forEach(m => {
-      if(m.id_a === teamId && !m.member_pids_a) m.member_pids_a = [...team.members];
-      if(m.id_b === teamId && !m.member_pids_b) m.member_pids_b = [...team.members];
-    });
-  });
-  (t.bracketRounds||[]).forEach(round => {
-    (round.matches||[]).forEach(bm => {
-      if(bm.a === teamId && !bm.member_pids_a) bm.member_pids_a = [...team.members];
-      if(bm.b === teamId && !bm.member_pids_b) bm.member_pids_b = [...team.members];
-    });
-  });
-  if(t.zonaFinal) {
-    Object.values(t.zonaFinal.matches||{}).forEach(m => {
-      if(m.id_a === teamId && !m.member_pids_a) m.member_pids_a = [...team.members];
-      if(m.id_b === teamId && !m.member_pids_b) m.member_pids_b = [...team.members];
-    });
-  }
+  // Registrar sustitución en el equipo
+  team.substitutions = team.substitutions || [];
+  team.substitutions.push({ oldPid, newPid, idx });
   team.members[idx] = newPid;
   if(t.sextScores?.[teamId]?.[oldPid] && !t.sextScores[teamId][newPid]) {
     t.sextScores[teamId][newPid] = Array(t.sextScores[teamId][oldPid].length).fill(0);
