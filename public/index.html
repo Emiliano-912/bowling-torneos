@@ -1000,6 +1000,9 @@ async function loadFromServer() {
   return false;
 }
 
+// Auto-refresh cada 30s para dispositivos que no editan
+setInterval(()=>{ if(!isAdmin()) loadFromServer(); }, 30000);
+
 let _tournamentSnapshot = null;
 let _snapshotTournamentId = null;
 
