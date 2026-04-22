@@ -2112,7 +2112,7 @@ function buildTorneos() {
   if(!DB.tournaments) DB.tournaments = [];
   const ts = DB.tournaments;
   const addBtn = isAdmin() ? `<button class="btn btn-accent" style="margin-left:auto" onclick="openAddTournament()">+ Torneo</button>` : '';
-  const backupBtns = isAdmin() ? `<button class="btn btn-ghost btn-sm" onclick="exportBackup()" title="Exportar backup">💾 Backup</button><button class="btn btn-ghost btn-sm" onclick="importBackup()" title="Importar backup">📂 Restaurar</button>` : '';
+  const backupBtns = isAdmin() ? `<button class="btn btn-ghost btn-sm" id="trn-danger-toggle" style="font-size:.68rem;color:var(--muted)">⚠️ Backup ▼</button><div id="trn-danger-zone" style="display:none;gap:6px"><button class="btn btn-ghost btn-sm" onclick="exportBackup()" title="Exportar backup">💾 Backup</button><button class="btn btn-ghost btn-sm" onclick="importBackup()" title="Importar backup">📂 Restaurar</button></div>` : '';
   const searchBar = `<div class="search-wrap" style="min-width:140px;max-width:200px"><span class="search-icon">🔍</span><input class="input" id="t-search" placeholder="Buscar torneo..." value="${torneoFilterQ}"></div>`;
   if(!ts.length) {
     return `<div class="filter-bar">${searchBar}${backupBtns}${addBtn}</div><div class="empty"><div class="empty-icon">🏅</div><div class="empty-title">No hay torneos todavía</div><div class="empty-sub">Creá un torneo individual o por parejas con clasificación por zona o eliminación directa</div></div>`;
@@ -2157,6 +2157,12 @@ function buildTorneos() {
 
 function bindTorneos() {
   document.getElementById('t-search')?.addEventListener('input', e => { torneoFilterQ = e.target.value; renderView(); });
+  document.getElementById('trn-danger-toggle')?.addEventListener('click', ()=>{
+    const zone = document.getElementById('trn-danger-zone');
+    const btn = document.getElementById('trn-danger-toggle');
+    if(zone.style.display === 'none') { zone.style.display = 'flex'; btn.innerHTML = '⚠️ Backup ▲'; }
+    else { zone.style.display = 'none'; btn.innerHTML = '⚠️ Backup ▼'; }
+  });
 }
 
 async function deleteTournament(tId) {
