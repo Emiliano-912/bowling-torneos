@@ -6349,7 +6349,8 @@ function toggleZoneMatches(zid) {
 function findZoneById(t, zoneId) {
   return (t.zones||[]).find(x=>x.id===zoneId)
     || (t.zonaFinal?.id===zoneId ? t.zonaFinal : null)
-    || (t.rondas||[]).reduce((found, r) => found || (r.zones||[]).find(x=>x.id===zoneId), null);
+    || (t.rondas||[]).reduce((found, r) => found || (r.zones||[]).find(x=>x.id===zoneId), null)
+    || (t.zonasFase||[]).reduce((found, f) => found || (f.zones||[]).find(x=>x.id===zoneId), null);
 }
 
 async function deleteZoneMatch(tId, zoneId, matchKey) {
