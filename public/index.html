@@ -1530,11 +1530,12 @@ function buildStats() {
   const allScores = active.flatMap(p=>allScoresOf(p));
   const totalLines = allScores.length;
   const totalPines = allScores.reduce((a,b)=>a+b,0);
-  // Promedio general: usar líneas reales (sin HCP, sólo torneos que cuentan)
-  const realScoresAll = active.flatMap(p=>realAllScoresOf(p));
-  const genAvg = realScoresAll.length ? (realScoresAll.reduce((a,b)=>a+b,0)/realScoresAll.length).toFixed(2) : '0.00';
-  const bestScore = Math.max(...allScores);
-  const bestPlayer = active.find(p=>allScoresOf(p).includes(bestScore));
+  // Promedio general: promedio de promedios individuales (sin HCP), igual que pestaña promedios
+  const playersWithReal = active.map(p => { const r = realAllScoresOf(p); return r.length ? r.reduce((a,b)=>a+b,0)/r.length : null; }).filter(v => v !== null);
+  const genAvg = playersWithReal.length ? (playersWithReal.reduce((a,b)=>a+b,0)/playersWithReal.length).toFixed(2) : '0.00';
+  const realScoresFlat = active.flatMap(p=>realAllScoresOf(p));
+  const bestScore = realScoresFlat.length ? Math.max(...realScoresFlat) : 0;
+  const bestPlayer = active.find(p=>realAllScoresOf(p).includes(bestScore));
   const mostActive = [...active].sort((a,b)=>b.scores.length-a.scores.length)[0];
 
   const kpis = [
@@ -1542,7 +1543,7 @@ function buildStats() {
     {v:active.length,l:'Activos',s:'con líneas'},
     {v:totalLines,l:'Líneas',s:'cargadas'},
     {v:genAvg,l:'Promedio',s:'general'},
-    {v:bestScore,l:'Máx. puntaje',s:bestPlayer?.name||''},
+    {v:bestScore,l:'Mejor línea',s:bestPlayer?.name||''},
     {v:totalPines.toLocaleString(),l:'Total palos',s:'acumulado'},
   ];
 
