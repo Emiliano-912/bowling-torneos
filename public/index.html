@@ -6346,18 +6346,29 @@ function toggleZoneMatches(zid) {
   if(arrow) arrow.style.transform = `rotate(${_zoneMatchesOpen[zid] ? 180 : 0}deg)`;
 }
 
+function findZoneById(t, zoneId) {
+  return (t.zones||[]).find(x=>x.id===zoneId)
+    || (t.zonaFinal?.id===zoneId ? t.zonaFinal : null)
+    || (t.rondas||[]).reduce((found, r) => found || (r.zones||[]).find(x=>x.id===zoneId), null);
+}
+
 async function deleteZoneMatch(tId, zoneId, matchKey) {
-  if(!isTournamentAdmin()) return;
+  if(!isAdmin()) return;
   const ok = await appConfirm('¿Borrar este resultado?');
   if(!ok) return;
   const t = (DB.tournaments||[]).find(x=>x.id===tId);
   if(!t) return;
-  const z = (t.zones||[]).find(x=>x.id===zoneId) || (t.zonaFinal?.id===zoneId ? t.zonaFinal : null);
+  const z = findZoneById(t, zoneId);
   if(!z || !z.matches || !z.matches[matchKey]) return;
   delete z.matches[matchKey];
   recalcZoneStandings(z, t);
   invalidateScoreCache();
   save(); renderTournamentDetail(); toast('Resultado borrado');
+}
+
+function editZoneMatch(tId, zoneId, idA, idB) {
+  if(!isAdmin()) return;
+  openZoneRRMatch(tId, zoneId, idA, idB);
 }
 
 function buildZoneMatchHistory(t, z, getName) {
@@ -6391,7 +6402,9 @@ function buildZoneMatchHistory(t, z, getName) {
           return `<span style="font-size:.6rem;background:var(--card);border:1px solid var(--border);padding:1px 6px;border-radius:5px;color:var(--muted)">${pName ? pName+': ' : ''}${sc}</span>`;
         }).join('')}</div>` : '';
     const mKey = getZoneMatchKey(m.id_a, m.id_b);
-    const delBtn = isTournamentAdmin() ? `<div style="text-align:center;margin-top:8px"><button onclick="deleteZoneMatch('${t.id}','${z.id}','${mKey}')" class="btn btn-danger btn-sm" style="font-size:.7rem;padding:4px 14px">🗑 Borrar resultado</button></div>` : '';
+    const editBtn = isAdmin() ? `<button onclick="editZoneMatch('${t.id}','${z.id}','${m.id_a}','${m.id_b}')" class="btn btn-ghost btn-sm" style="font-size:.7rem;padding:4px 14px">✏️ Editar</button>` : '';
+    const delBtn2 = isAdmin() ? `<button onclick="deleteZoneMatch('${t.id}','${z.id}','${mKey}')" class="btn btn-danger btn-sm" style="font-size:.7rem;padding:4px 14px">🗑 Borrar</button>` : '';
+    const actionBtns = (editBtn || delBtn2) ? `<div style="display:flex;justify-content:center;gap:8px;margin-top:8px">${editBtn}${delBtn2}</div>` : '';
     return `<div style="padding:10px 12px;border-bottom:1px solid var(--border)">
       <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center">
         <div>
@@ -6409,7 +6422,7 @@ function buildZoneMatchHistory(t, z, getName) {
           ${memberDetailB}
         </div>
       </div>
-      ${delBtn}
+      ${actionBtns}
     </div>`;
   }).join('');
 
@@ -7036,10 +7049,10 @@ function startBracketFromTeams(tId, teamIds) {
 }
 
 function openZoneRRMatch(tId, zoneId, preA, preB) {
-  if(!isTournamentAdmin()) return;
+  if(!isAdmin()) return;
   const t = (DB.tournaments||[]).find(x=>x.id===tId);
   if(!t) return;
-  const z = (t.zones||[]).find(x=>x.id===zoneId) || (t.zonaFinal?.id===zoneId ? t.zonaFinal : null);
+  const z = findZoneById(t, zoneId);
   if(!z) return;
   const entries = z.entries||[];
   if(entries.length < 2) { toast('Necesitás al menos 2 participantes en la zona','err'); return; }
