@@ -6284,6 +6284,16 @@ function swapZoneEntry(tId, zoneId, fromIdx, toIdx) {
   z.entries[toIdx] = tmp;
   save(); renderTournamentDetail();
 }
+function swapZonaFinalEntry(tId, fromIdx, toIdx) {
+  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  if(!t || !t.zonaFinal || !t.zonaFinal.entries) return;
+  const entries = t.zonaFinal.entries;
+  if(fromIdx < 0 || toIdx < 0 || fromIdx >= entries.length || toIdx >= entries.length) return;
+  const tmp = entries[fromIdx];
+  entries[fromIdx] = entries[toIdx];
+  entries[toIdx] = tmp;
+  save(); renderTournamentDetail();
+}
 
 function recalcZoneStandings(z, t) {
   const matches = z.matches || {};
@@ -9253,18 +9263,25 @@ function buildZonaFinalRR(t) {
 
   // ── Render RR grid identical to buildZonasTab ──
   const shortNameFor = id => {
-    const full = getName(id);
-    const word = full.split(' ')[0];
-    return word.length <= 9 ? word : word.slice(0,8)+'…';
+    if(t.mode === 'equipo' || t.mode === 'trio' || t.mode === 'sexteto') {
+      const members = (t.teams||[]).find(x=>x.id===id)?.members;
+      if(members) {
+        return members
+          .map(pid => (DB.players.find(p=>p.id===pid)?.name || '?').trim())
+          .join('<br>');
+      }
+    }
+    return getName(id).trim();
   };
 
   const headerCols = entries.map((_,i)=>`<th class="rr-hcol">${i+1}</th>`).join('');
 
-  const namePx = 90, crossPx = 46, ptsPx = 52, posPx = 36;
+  const zfHasMatches = Object.keys(zf.matches||{}).length > 0;
+  const namePx = 150, crossPx = 46, ptsPx = 52, posPx = 36;
   const tableMinW = namePx + n * crossPx + ptsPx + posPx;
   const colgroupExpanded = `<colgroup><col style="width:${namePx}px">${entries.map(()=>`<col style="width:${crossPx}px">`).join('')}<col style="width:${ptsPx}px"><col style="width:${posPx}px"></colgroup>`;
 
-  const expandedRows = entries.map(rowEntry => {
+  const expandedRows = entries.map((rowEntry, ri) => {
     const crossCells = entries.map(colEntry => {
       if(rowEntry.id === colEntry.id) return `<td class="rr-cell rr-diag"><div class="rr-cell-inner"><span class="rr-cell-pts">X</span></div></td>`;
       const res = getZoneMatchResult(zf, rowEntry.id, colEntry.id);
@@ -9277,8 +9294,11 @@ function buildZonaFinalRR(t) {
     const palosF = rowEntry.pinesF||0;
     const pos = rowEntry.pos||'—';
     const posClass = pos===1?'rr-pos-gold':pos===2?'rr-pos-silver':pos===3?'rr-pos-bronze':'rr-pos';
+    const reorderBtns = (!zfHasMatches && isTournamentAdmin())
+      ? `<span style="display:inline-flex;flex-direction:column;gap:0;margin-right:3px;flex-shrink:0">${ri>0?`<button onclick="event.stopPropagation();swapZonaFinalEntry('${t.id}',${ri},${ri-1})" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.55rem;padding:0;line-height:1" title="Subir">▲</button>`:'<span style="width:10px;display:inline-block"></span>'}${ri<entries.length-1?`<button onclick="event.stopPropagation();swapZonaFinalEntry('${t.id}',${ri},${ri+1})" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.55rem;padding:0;line-height:1" title="Bajar">▼</button>`:'<span style="width:10px;display:inline-block"></span>'}</span>`
+      : '';
     return `<tr>
-      <td class="rr-name-cell"><div class="rr-name">${shortNameFor(rowEntry.id)}</div></td>
+      <td class="rr-name-cell"><div class="rr-name">${reorderBtns}${shortNameFor(rowEntry.id)}</div></td>
       ${crossCells}
       <td class="rr-total"><div class="rr-cell-inner"><span class="rr-cell-pts" style="color:var(--accent)">${pts}</span><span class="rr-palos-sum">${palosF}</span></div></td>
       <td class="rr-pos-cell ${posClass}">${pos}</td>
