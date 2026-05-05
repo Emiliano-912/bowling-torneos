@@ -6667,7 +6667,8 @@ function buildZonasTab(t) {
       const label = f.faseName || `Fase ${fNum}`;
       const isActive = activeIdx === i;
       const editBtn = isActive && isTournamentAdmin() ? ` <span onclick="event.stopPropagation();openRenameFase('${t.id}',${i})" style="font-size:.7rem;opacity:.7;cursor:pointer">✏️</span>` : '';
-      return `<button class="inner-tab ${isActive?'active':''}" style="font-size:.72rem" onclick="setZonasFase('${t.id}',${i})">${label} 🔒${editBtn}</button>`;
+      const delBtn = isActive && isTournamentAdmin() ? ` <span onclick="event.stopPropagation();deleteZonasFase('${t.id}',${i})" style="font-size:.7rem;opacity:.8;cursor:pointer;color:#ef4444" title="Eliminar esta fase">🗑</span>` : '';
+      return `<button class="inner-tab ${isActive?'active':''}" style="font-size:.72rem" onclick="setZonasFase('${t.id}',${i})">${label} 🔒${editBtn}${delBtn}</button>`;
     }).join('');
     const isCurrentActive = activeIdx === -1;
     const currentFaseLabel = t._faseActualName || `Fase ${faseActual}`;
@@ -7052,6 +7053,21 @@ function setZonasFase(tId, idx) {
   if(!t) return;
   t._zonasFaseActiva = idx; // -1 = actual, 0+ = archived
   renderTournamentDetail();
+}
+
+async function deleteZonasFase(tId, idx) {
+  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  if(!t||!isTournamentAdmin()) return;
+  const fases = t.zonasFase||[];
+  if(idx < 0 || idx >= fases.length) return;
+  const f = fases[idx];
+  const label = f.faseName || `Fase ${f.faseNum || (idx+1)}`;
+  const ok = await appConfirm(`¿Eliminar "${label}" y todos sus resultados? Las demás fases no se modifican.`);
+  if(!ok) return;
+  t.zonasFase.splice(idx, 1);
+  t._zonasFaseActiva = -1;
+  invalidateScoreCache(); save(); renderTournamentDetail();
+  toast('🗑 Fase eliminada');
 }
 
 // kept for backwards compatibility — now a no-op redirect
