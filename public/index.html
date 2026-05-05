@@ -7769,16 +7769,20 @@ function openNextRound(tId, ri) {
   }, 'Elegir quién sigue en el pica-pica');
 }
 
-function openCreateRound(tId, available, roundIdx) {
+function openCreateRound(tId, available, roundIdx, opts) {
   const t = (DB.tournaments||[]).find(x=>x.id===tId);
   if(!t) return;
+  opts = opts || {};
+  const bracketKey = opts.bracketKey || 'bracketRounds';
+  const targetTab = opts.targetTab || 'bracket';
+  const customName = opts.suggestedName;
 
   const isTeam = (t.mode === 'equipo' || t.mode === 'trio' || t.mode === 'sexteto');
   const ROUND_NAMES = ['Final','Semifinal','Cuartos de final','Octavos de final','1ra Ronda','2da Ronda','3ra Ronda','4ta Ronda'];
-  const suggestedName = ROUND_NAMES[Math.max(0, ROUND_NAMES.length - 1 - roundIdx)] || `Ronda ${roundIdx+1}`;
+  const suggestedName = customName || ROUND_NAMES[Math.max(0, ROUND_NAMES.length - 1 - roundIdx)] || `Ronda ${roundIdx+1}`;
 
-  // Default lines: inherit from previous round or 1
-  const prevRound = (t.bracketRounds||[])[roundIdx - 1];
+  const srcRounds = t[bracketKey] || [];
+  const prevRound = srcRounds[roundIdx - 1];
   const defaultLines = prevRound?.lineasPorJugador || 1;
 
   // Build pair selectors
@@ -7849,9 +7853,9 @@ function openCreateRound(tId, available, roundIdx) {
       scoreA: null, scoreB: null, palosA: null, palosB: null, winner: null
     })).filter(m => m.a && m.b && m.a !== m.b);
     if(!matches.length) { toast('Agregá al menos un partido','err'); return; }
-    t.bracketRounds = t.bracketRounds || [];
-    t.bracketRounds.push({ id: genId(), name, matches, locked: false, lineasPorJugador: lineas });
-    save(); closeModal('modal-match-result'); switchTournamentTab('bracket'); toast(`✓ Ronda "${name}" creada (${lineas} línea${lineas!==1?'s':''}/jugador)`);
+    t[bracketKey] = t[bracketKey] || [];
+    t[bracketKey].push({ id: genId(), name, matches, locked: false, lineasPorJugador: lineas });
+    save(); closeModal('modal-match-result'); switchTournamentTab(targetTab); toast(`✓ Ronda "${name}" creada (${lineas} línea${lineas!==1?'s':''}/jugador)`);
   };
   openModal('modal-match-result');
   setTimeout(()=>document.getElementById('cr-name')?.select(), 200);
@@ -8854,31 +8858,9 @@ function startBracketFromSumapalos(tId) {
   const preSelected = allRanked.slice(0, clsN).map(r=>r.id);
 
   openSelectAdvancingModal(t, allRanked.map(r=>({id:r.id,label:r.name,detail:r.total})), preSelected, (selected) => {
-    if(isRepFmt && selected.length === 16) {
-      _createCuartosConSeedeo(t, selected);
-      toast(`✓ Cuartos de final creados con 16 equipos`);
-      activeTournamentTab = 'bracket';
-      renderTournamentDetail();
-    } else {
-      startBracketFromTeams(tId, selected);
-      toast(`✓ Pica-pica iniciado con ${selected.length} equipos`);
-      activeTournamentTab = 'bracket';
-      renderTournamentDetail();
-    }
+    const roundName = isRepFmt ? 'Cuartos de final' : undefined;
+    openCreateRound(tId, selected, 0, roundName ? { suggestedName: roundName } : undefined);
   });
-}
-
-function _createCuartosConSeedeo(t, teamIds) {
-  // Seedeo clásico: 1v16, 8v9, 2v15, 7v10, 3v14, 6v11, 4v13, 5v12
-  const seedPairs = [[0,15],[7,8],[1,14],[6,9],[2,13],[5,10],[3,12],[4,11]];
-  const matches = seedPairs.map(([a,b]) => ({
-    id: genId(),
-    a: teamIds[a], b: teamIds[b],
-    scoreA: null, scoreB: null, palosA: null, palosB: null, winner: null
-  }));
-  t.bracketRounds = t.bracketRounds || [];
-  t.bracketRounds.push({ id: genId(), name: 'Cuartos de final', matches, locked: false, lineasPorJugador: t.sumaLineasPorJugador || 3 });
-  save();
 }
 
 function buildResultadosTab(t) {
@@ -9200,35 +9182,7 @@ function startSemisFromCuartos(tId) {
   if(!cuartos) return;
   const winners = cuartos.matches.map(m=>m.winner).filter(Boolean);
   if(winners.length < 4) { toast('Se necesitan al menos 4 ganadores de cuartos','err'); return; }
-
-  const prevLineas = cuartos.lineasPorJugador || 1;
-  document.getElementById('mr-body').innerHTML = `
-    <div style="font-size:.8rem;font-weight:700;margin-bottom:10px">Crear Semifinales</div>
-    <div style="font-size:.68rem;color:var(--muted);margin-bottom:12px">Los ${winners.length} ganadores de cuartos se enfrentan: G:C1 vs G:C2, G:C3 vs G:C4, etc.</div>
-    <div class="field"><label class="label">Líneas por jugador</label>
-      <input class="input" id="sr-lineas" type="number" min="1" max="10" value="${prevLineas}"
-        style="text-align:center;font-family:'Bebas Neue',cursive;font-size:1.5rem;width:100px">
-    </div>`;
-  document.getElementById('mr-submit').textContent = 'Crear semifinales';
-  document.getElementById('mr-submit').onclick = () => {
-    const lineas = parseInt(document.getElementById('sr-lineas')?.value) || 1;
-    const matches = [];
-    for(let i = 0; i < winners.length; i += 2) {
-      if(winners[i+1]) {
-        matches.push({ id: genId(), a: winners[i], b: winners[i+1], scoreA: null, scoreB: null, palosA: null, palosB: null, winner: null });
-      }
-    }
-    t.bracketRounds.push({ id: genId(), name: 'Semifinales', matches, locked: false, lineasPorJugador: lineas });
-
-    const losers = cuartos.matches.map(m => m.winner === m.a ? m.b : m.a).filter(Boolean);
-    if(losers.length >= 2 && !(t.repechajeBracket||[]).length) {
-      _createRepechajeFromLosers(t, losers, lineas);
-    }
-
-    save(); closeModal('modal-match-result'); renderTournamentDetail();
-    toast(`✓ Semifinales creadas + repechaje iniciado`);
-  };
-  openModal('modal-match-result');
+  openCreateRound(tId, winners, 1, { suggestedName: 'Semifinales' });
 }
 
 function startRepechajeFromCuartos(tId) {
@@ -9239,49 +9193,7 @@ function startRepechajeFromCuartos(tId) {
   if(!cuartos) return;
   const losers = cuartos.matches.map(m => m.winner === m.a ? m.b : m.a).filter(Boolean);
   if(losers.length < 2) { toast('No hay suficientes perdedores','err'); return; }
-  const lineas = cuartos.lineasPorJugador || 1;
-  _createRepechajeFromLosers(t, losers, lineas);
-  save(); renderTournamentDetail();
-  toast(`✓ Repechaje iniciado con ${losers.length} equipos`);
-  activeTournamentTab = 'repechaje';
-  renderTournamentDetail();
-}
-
-function _createRepechajeFromLosers(t, losers, lineas) {
-  t.repechajeBracket = t.repechajeBracket || [];
-  const cuartos = (t.bracketRounds||[])[0];
-  if(!cuartos) return;
-
-  // Cruces del repechaje: P:C1 vs P:C2, P:C5 vs P:C6, P:C3 vs P:C4, P:C7 vs P:C8
-  // (perdedores de los cuartos pareados: los perdedores de la misma semifinal se cruzan)
-  const matchOrder = [];
-  const cm = cuartos.matches;
-  if(cm.length >= 8) {
-    // R1: P:C1 vs P:C2 (perdedores de C1 y C2 que iban a la misma semi)
-    matchOrder.push([_loser(cm[0]), _loser(cm[1])]);
-    // R3: P:C5 vs P:C6
-    matchOrder.push([_loser(cm[4]), _loser(cm[5])]);
-    // R2: P:C3 vs P:C4
-    matchOrder.push([_loser(cm[2]), _loser(cm[3])]);
-    // R4: P:C7 vs P:C8
-    matchOrder.push([_loser(cm[6]), _loser(cm[7])]);
-  } else {
-    for(let i = 0; i < losers.length; i += 2) {
-      if(losers[i+1]) matchOrder.push([losers[i], losers[i+1]]);
-    }
-  }
-
-  const matches = matchOrder.map(pair => ({
-    id: genId(), a: pair[0], b: pair[1],
-    scoreA: null, scoreB: null, palosA: null, palosB: null, winner: null
-  }));
-
-  t.repechajeBracket.push({ id: genId(), name: 'Ronda 1', matches, locked: false, lineasPorJugador: lineas });
-}
-
-function _loser(match) {
-  if(!match || !match.winner) return null;
-  return match.winner === match.a ? match.b : match.a;
+  openCreateRound(tId, losers, 0, { bracketKey: 'repechajeBracket', targetTab: 'repechaje', suggestedName: 'Ronda 1 Repechaje' });
 }
 
 function advanceRepechaje(tId) {
@@ -9297,32 +9209,8 @@ function advanceRepechaje(tId) {
     toast('El repechaje ya tiene su ganador','info');
     return;
   }
-  const prevLineas = lastRound.lineasPorJugador || 1;
-
-  document.getElementById('mr-body').innerHTML = `
-    <div style="font-size:.8rem;font-weight:700;margin-bottom:10px">Siguiente ronda del repechaje</div>
-    <div style="font-size:.68rem;color:var(--muted);margin-bottom:12px">${winners.length} ganadores avanzan. ${winners.length === 2 ? 'Esta es la final del repechaje.' : ''}</div>
-    <div class="field"><label class="label">Líneas por jugador</label>
-      <input class="input" id="rep-lineas" type="number" min="1" max="10" value="${prevLineas}"
-        style="text-align:center;font-family:'Bebas Neue',cursive;font-size:1.5rem;width:100px">
-    </div>`;
-  document.getElementById('mr-submit').textContent = 'Crear ronda';
-  document.getElementById('mr-submit').onclick = () => {
-    const lineas = parseInt(document.getElementById('rep-lineas')?.value) || 1;
-    const matches = [];
-    for(let i = 0; i < winners.length; i += 2) {
-      if(winners[i+1]) {
-        matches.push({ id: genId(), a: winners[i], b: winners[i+1], scoreA: null, scoreB: null, palosA: null, palosB: null, winner: null });
-      }
-    }
-    const roundName = matches.length === 1 ? 'Final Repechaje' : `Ronda ${rep.length + 1}`;
-    t.repechajeBracket.push({ id: genId(), name: roundName, matches, locked: false, lineasPorJugador: lineas });
-    save(); closeModal('modal-match-result');
-    activeTournamentTab = 'repechaje';
-    renderTournamentDetail();
-    toast(`✓ ${roundName} del repechaje creada`);
-  };
-  openModal('modal-match-result');
+  const roundName = winners.length === 2 ? 'Final Repechaje' : `Ronda ${rep.length + 1} Repechaje`;
+  openCreateRound(tId, winners, rep.length, { bracketKey: 'repechajeBracket', targetTab: 'repechaje', suggestedName: roundName });
 }
 
 // ── REPECHAJE TAB ─────────────────────────────────────────────────────
