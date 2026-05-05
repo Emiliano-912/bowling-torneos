@@ -7615,6 +7615,19 @@ function resetBracket(tId) {
   save(); renderTournamentDetail(); toast('🔄 Pica-pica reseteado');
 }
 
+async function deleteBracketRound(tId, roundIdx) {
+  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  if(!t||!isTournamentAdmin()) return;
+  const rounds = t.bracketRounds||[];
+  if(roundIdx < 0 || roundIdx >= rounds.length) return;
+  const rName = rounds[roundIdx].name || `Ronda ${roundIdx+1}`;
+  const ok = await appConfirm(`¿Eliminar "${rName}" y todos sus resultados?`);
+  if(!ok) return;
+  t.bracketRounds.splice(roundIdx, 1);
+  invalidateScoreCache(); save(); renderTournamentDetail();
+  toast('🗑 Ronda eliminada');
+}
+
 // ── Dynamic round-by-round bracket ────────────────────────────────────
 // t.bracketRounds = [{id, name, matches:[{id,a,b,scoreA,scoreB,winner,palosA,palosB}], locked, advancedIds:[]}]
 
@@ -7726,8 +7739,11 @@ function buildBracketTab(t) {
     }
 
     const lineasLabel = (round.lineasPorJugador && round.lineasPorJugador > 1) ? ` <span style="font-size:.52rem;color:var(--accent);font-family:'Nunito',sans-serif">(${round.lineasPorJugador}L)</span>` : '';
+    const deleteRoundBtn = isTournamentAdmin() && rounds.length > 1
+      ? `<button class="btn btn-danger btn-sm" style="padding:1px 6px;font-size:.6rem;margin-left:6px;vertical-align:middle" onclick="event.stopPropagation();deleteBracketRound('${t.id}',${ri})" title="Eliminar esta ronda">🗑</button>`
+      : '';
     return `<div class="bracket-round">
-      <div class="bracket-round-title">${round.name}${lineasLabel}</div>
+      <div class="bracket-round-title">${round.name}${lineasLabel}${deleteRoundBtn}</div>
       ${matchCards}
       ${actionHtml}
     </div>`;
