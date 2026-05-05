@@ -3880,7 +3880,7 @@ function buildSingleFase(t, ph, phIdx) {
   if(isTournamentAdmin() && !ph.locked) {
     actionBtns += `<button class="btn btn-ghost btn-sm" id="fase-autofill-btn" data-phidx="${phIdx}">🎲 Auto-completar</button>`;
     actionBtns += `<button class="btn btn-danger btn-sm" id="fase-reset-btn" data-phidx="${phIdx}">🔄 Resetear</button>`;
-    if(isLast && (t.phases||[]).length > 1) {
+    if((t.phases||[]).length > 1) {
       actionBtns += `<button class="btn btn-danger btn-sm" id="fase-delete-btn" data-phidx="${phIdx}">🗑 Eliminar fase</button>`;
     }
     if(isLast && qualifying.some(e=>e.palos>0)) {
@@ -3894,8 +3894,7 @@ function buildSingleFase(t, ph, phIdx) {
       }
     }
   }
-  if(isTournamentAdmin() && ph.locked && isLast) {
-    // Allow deleting locked phases too (except the first)
+  if(isTournamentAdmin() && ph.locked) {
     if((t.phases||[]).length > 1) {
       actionBtns += `<button class="btn btn-danger btn-sm" id="fase-delete-btn" data-phidx="${phIdx}">🗑 Eliminar fase</button>`;
     }
