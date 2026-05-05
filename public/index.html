@@ -793,6 +793,7 @@ body.admin-mode .admin-only-block { display: block !important; }
               <option value="zona">Estilo Aniversario</option>
               <option value="suma+bracket">Pica-Pica</option>
               <option value="suma+zona">Pica-Pica + Final</option>
+              <option value="suma+repechaje+zona">Pica-Pica con Repechaje</option>
               <option value="zona_dia">🎯 Zona de un día (una zona, sin avance)</option>
             </select>
           </div>
@@ -876,6 +877,40 @@ body.admin-mode .admin-only-block { display: block !important; }
                 style="text-align:center;font-family:'Bebas Neue',cursive;font-size:1.4rem"></div>
             <div class="field" style="margin:0"><label class="label">Pts. por punto de equipo</label>
               <input class="input" id="nt-sz-pts-eq" type="number" min="0" max="10" step="0.5" value="2"
+                style="text-align:center;font-family:'Bebas Neue',cursive;font-size:1.4rem"></div>
+          </div>
+        </div>
+      </div>
+      <!-- Suma+repechaje+zona options -->
+      <div id="nt-suma-rep-zona-wrap" style="display:none">
+        <div style="font-size:.68rem;color:var(--muted);margin-bottom:12px">Todos suman palos → top 16 al pica-pica → cuartos + semis + repechaje de perdedores → zona final con 5 equipos (4 de semis + 1 del repechaje).</div>
+        <div class="field"><label class="label">Ganador de cada cruce se define por</label>
+          <select class="input" id="nt-srz-winby" onchange="document.getElementById('nt-srz-bp-wrap').style.display=this.value==='puntos'?'block':'none'">
+            <option value="puntos" selected>Puntos (sistema ind + equipo)</option>
+            <option value="palos">Palos (suma total más alta gana)</option>
+          </select>
+        </div>
+        <div id="nt-srz-bp-wrap">
+          <div style="background:var(--card);border:1px solid rgba(56,189,248,.3);border-radius:10px;padding:10px 12px;margin-bottom:8px">
+            <div style="font-size:.7rem;font-weight:700;color:#38bdf8;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">⚔️ Puntos por partido en el pica-pica y repechaje</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+              <div class="field" style="margin:0"><label class="label">Pts. por punto individual</label>
+                <input class="input" id="nt-srz-bp-ind" type="number" min="0" max="10" step="0.5" value="1"
+                  style="text-align:center;font-family:'Bebas Neue',cursive;font-size:1.4rem"></div>
+              <div class="field" style="margin:0"><label class="label">Pts. por punto de equipo</label>
+                <input class="input" id="nt-srz-bp-eq" type="number" min="0" max="10" step="0.5" value="2"
+                  style="text-align:center;font-family:'Bebas Neue',cursive;font-size:1.4rem"></div>
+            </div>
+          </div>
+        </div>
+        <div style="background:var(--card);border:1px solid rgba(59,130,246,.3);border-radius:10px;padding:10px 12px;margin-bottom:8px">
+          <div style="font-size:.7rem;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">🏆 Puntos por partido en la zona final</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div class="field" style="margin:0"><label class="label">Pts. por punto individual</label>
+              <input class="input" id="nt-srz-pts-ind" type="number" min="0" max="10" step="0.5" value="1"
+                style="text-align:center;font-family:'Bebas Neue',cursive;font-size:1.4rem"></div>
+            <div class="field" style="margin:0"><label class="label">Pts. por punto de equipo</label>
+              <input class="input" id="nt-srz-pts-eq" type="number" min="0" max="10" step="0.5" value="2"
                 style="text-align:center;font-family:'Bebas Neue',cursive;font-size:1.4rem"></div>
           </div>
         </div>
@@ -1364,6 +1399,22 @@ function tournamentPlayerLines(t, playerId) {
         });
       });
       (t.bracketRounds||[]).forEach(round => {
+        (round.matches||[]).forEach(bm => {
+          let ms = null;
+          if(bm.a === team.id) ms = bm.member_scores_a;
+          else if(bm.b === team.id) ms = bm.member_scores_b;
+          if(!ms) return;
+          if(ms[memberIdx]) {
+            const val = ms[memberIdx];
+            if(Array.isArray(val)) {
+              val.forEach(v => { if(v > 0) lines.push(v); });
+            } else if(val > 0) {
+              lines.push(val);
+            }
+          }
+        });
+      });
+      (t.repechajeBracket||[]).forEach(round => {
         (round.matches||[]).forEach(bm => {
           let ms = null;
           if(bm.a === team.id) ms = bm.member_scores_a;
@@ -2229,7 +2280,7 @@ function buildTorneos() {
     return `<div class="filter-bar">${searchBar}${backupBtns}${addBtn}</div><div class="empty"><div class="empty-title">Sin resultados para "${torneoFilterQ}"</div></div>`;
   }
   const cards = filtered.map(t => {
-    const fmtLabel = {clasificacion:'Clasificación palos', zona:'Estilo Aniversario', eliminacion:'Eliminación directa','zona+elim':'Zonas + Eliminación','suma+bracket':'Pica-Pica','suma+zona':'Pica-Pica + Final'}[t.format] || t.format;
+    const fmtLabel = {clasificacion:'Clasificación palos', zona:'Estilo Aniversario', eliminacion:'Eliminación directa','zona+elim':'Zonas + Eliminación','suma+bracket':'Pica-Pica','suma+zona':'Pica-Pica + Final','suma+repechaje+zona':'Pica-Pica con Repechaje'}[t.format] || t.format;
     const modLabel = t.mode === 'equipo' ? '👥 Parejas' : t.mode === 'trio' ? '🎳 Tríos' : t.mode === 'sexteto' ? '6️⃣ Sexteto' : '👤 Individual';
     const fmtClass = {zona:'zona', eliminacion:'elim','zona+elim':'zona'}[t.format] || '';
     const statusIcon = {activo:'🟢', finalizado:'🏁', pendiente:'⏳'}[t.status] || '⏳';
@@ -2635,10 +2686,12 @@ function ntModeChange() {
   if(sbWrap) sbWrap.style.display = ((mode==='equipo'||mode==='trio') && fmt==='suma+bracket') ? 'block' : 'none';
   const szWrap = document.getElementById('nt-suma-zona-wrap');
   if(szWrap) szWrap.style.display = ((mode==='equipo'||mode==='trio') && fmt==='suma+zona') ? 'block' : 'none';
+  const srzWrap2 = document.getElementById('nt-suma-rep-zona-wrap');
+  if(srzWrap2) srzWrap2.style.display = ((mode==='equipo'||mode==='trio') && fmt==='suma+repechaje+zona') ? 'block' : 'none';
   const ptsEqLabel = document.getElementById('nt-pts-eq-label');
   if(ptsEqLabel) ptsEqLabel.textContent = mode === 'trio' ? 'Pts. por punto de trío' : 'Pts. por punto de pareja';
   const ptsSystem = document.getElementById('nt-pts-system');
-  if(ptsSystem) ptsSystem.style.display = (mode==='equipo'||mode==='trio') && (fmt==='suma+bracket'||fmt==='suma+zona') ? 'none' : '';
+  if(ptsSystem) ptsSystem.style.display = (mode==='equipo'||mode==='trio') && (fmt==='suma+bracket'||fmt==='suma+zona'||fmt==='suma+repechaje+zona') ? 'none' : '';
   ntUpdatePtsPreview();
 }
 
@@ -2677,8 +2730,10 @@ document.getElementById('nt-format')?.addEventListener('change', () => {
   if(sbWrap) sbWrap.style.display = fmt==='suma+bracket' ? 'block' : 'none';
   const szWrap = document.getElementById('nt-suma-zona-wrap');
   if(szWrap) szWrap.style.display = fmt==='suma+zona' ? 'block' : 'none';
+  const srzWrap = document.getElementById('nt-suma-rep-zona-wrap');
+  if(srzWrap) srzWrap.style.display = fmt==='suma+repechaje+zona' ? 'block' : 'none';
   const ptsSystem = document.getElementById('nt-pts-system');
-  if(ptsSystem) ptsSystem.style.display = (mode==='equipo'||mode==='trio') && (fmt==='suma+bracket'||fmt==='suma+zona') ? 'none' : '';
+  if(ptsSystem) ptsSystem.style.display = (mode==='equipo'||mode==='trio') && (fmt==='suma+bracket'||fmt==='suma+zona'||fmt==='suma+repechaje+zona') ? 'none' : '';
 });
 document.getElementById('nt-team-size')?.addEventListener('change', ntUpdatePtsPreview);
 document.getElementById('nt-pts-ind')?.addEventListener('input', ntUpdatePtsPreview);
@@ -2779,18 +2834,20 @@ document.getElementById('nt-submit').addEventListener('click', () => {
       ptsIndividual, ptsEquipo,
       teamSize, zoneCount: zones,
       // suma+bracket
-      clasificadosMataMata: fmt==='suma+bracket' ? sumaCls : undefined,
-      sumaPalosScores: (fmt==='suma+bracket'||fmt==='suma+zona') ? {} : undefined,
-      sumaPalosMember: (fmt==='suma+bracket'||fmt==='suma+zona') ? {} : undefined,
-      sumaLineasPorJugador: (fmt==='suma+bracket'||fmt==='suma+zona') ? 3 : undefined,
+      clasificadosMataMata: fmt==='suma+bracket' ? sumaCls : fmt==='suma+repechaje+zona' ? 16 : undefined,
+      sumaPalosScores: (fmt==='suma+bracket'||fmt==='suma+zona'||fmt==='suma+repechaje+zona') ? {} : undefined,
+      sumaPalosMember: (fmt==='suma+bracket'||fmt==='suma+zona'||fmt==='suma+repechaje+zona') ? {} : undefined,
+      sumaLineasPorJugador: (fmt==='suma+bracket'||fmt==='suma+zona'||fmt==='suma+repechaje+zona') ? 3 : undefined,
       // suma+zona
       clasificadosZonaFinal: fmt==='suma+zona' ? szCls : undefined,
-      zonaFinal: fmt==='suma+zona' ? null : undefined,
-      zonaFinalPtsInd: fmt==='suma+zona' ? szPtsInd : undefined,
-      zonaFinalPtsEq: fmt==='suma+zona' ? szPtsEq : undefined,
-      bracketWinBy: fmt==='suma+zona' ? szWinBy : undefined,
-      bracketPtsInd: fmt==='suma+zona' && szWinBy==='puntos' ? szBpInd : undefined,
-      bracketPtsEq: fmt==='suma+zona' && szWinBy==='puntos' ? szBpEq : undefined,
+      zonaFinal: (fmt==='suma+zona'||fmt==='suma+repechaje+zona') ? null : undefined,
+      zonaFinalPtsInd: fmt==='suma+zona' ? szPtsInd : fmt==='suma+repechaje+zona' ? (parseFloat(document.getElementById('nt-srz-pts-ind')?.value) ?? 1) : undefined,
+      zonaFinalPtsEq: fmt==='suma+zona' ? szPtsEq : fmt==='suma+repechaje+zona' ? (parseFloat(document.getElementById('nt-srz-pts-eq')?.value) ?? 2) : undefined,
+      bracketWinBy: fmt==='suma+zona' ? szWinBy : fmt==='suma+repechaje+zona' ? (document.getElementById('nt-srz-winby')?.value||'puntos') : undefined,
+      bracketPtsInd: fmt==='suma+zona' && szWinBy==='puntos' ? szBpInd : fmt==='suma+repechaje+zona' ? (parseFloat(document.getElementById('nt-srz-bp-ind')?.value) ?? 1) : undefined,
+      bracketPtsEq: fmt==='suma+zona' && szWinBy==='puntos' ? szBpEq : fmt==='suma+repechaje+zona' ? (parseFloat(document.getElementById('nt-srz-bp-eq')?.value) ?? 2) : undefined,
+      // suma+repechaje+zona
+      repechajeBracket: fmt==='suma+repechaje+zona' ? [] : undefined,
       // multifase
       fasesCount: fmt==='multifase' ? fasesCount : undefined,
       fases: fmt==='multifase' ? [] : undefined,
@@ -2887,7 +2944,7 @@ function renderTournamentDetail() {
   const fmtLabel = t.mode==='individual' ? (t.indTipo==='liga_grupos'?'Liga por Grupos':t.indTipo==='dia'?'Día único':'Clasificación por palos')
     : t.mode==='mixto' ? 'Mixto por modalidades'
     : t.mode==='sexteto' ? 'Suma de palos'
-    : ({zona:'Estilo Aniversario', eliminacion:'Eliminación directa','zona+elim':'Zonas + Eliminación', multifase:'Por rondas','suma+bracket':'Pica-Pica','suma+zona':'Pica-Pica + Final','zona_dia':'Zona de un día'}[t.format]||t.format);
+    : ({zona:'Estilo Aniversario', eliminacion:'Eliminación directa','zona+elim':'Zonas + Eliminación', multifase:'Por rondas','suma+bracket':'Pica-Pica','suma+zona':'Pica-Pica + Final','suma+repechaje+zona':'Pica-Pica con Repechaje','zona_dia':'Zona de un día'}[t.format]||t.format);
   const undoBtn = (isTournamentAdmin() && _tournamentSnapshot && _snapshotTournamentId === t.id)
     ? `<button onclick="undoTournament()" class="btn btn-ghost btn-sm" style="font-size:.68rem;padding:2px 8px;color:#f59e0b;border-color:rgba(245,158,11,.4)">↩ Deshacer</button>` : '';
   document.getElementById('td-badges').innerHTML = `
@@ -2922,6 +2979,7 @@ function renderTournamentDetail() {
     if(t.format === 'multifase') tabs.push('multifase');
     if(t.format === 'suma+bracket') { tabs.push('sumapalos'); tabs.push('bracket'); }
     if(t.format === 'suma+zona') { tabs.push('sumapalos'); tabs.push('bracket'); }
+    if(t.format === 'suma+repechaje+zona') { tabs.push('sumapalos'); tabs.push('bracket'); tabs.push('repechaje'); }
     // Zona final available on all team formats except zona_dia
     if((t.mode === 'equipo' || t.mode === 'trio') && t.format !== 'zona_dia') {
       tabs.push('zonafinal');
@@ -2929,7 +2987,7 @@ function renderTournamentDetail() {
   }
   tabs.push('resultados');
 
-  const tabLabels = { participantes: t.mode==='mixto'?'👥 Parejas':t.mode==='trio'?'🎳 Tríos':t.mode==='sexteto'?'6️⃣ Sexteto':t.mode==='equipo'?'👥 Parejas':'👤 Participantes', modalidades:'🎳 Modalidades', fases:'📋 Fases', zonas:'🗺 Zonas', bracket:'⚔️ Pica-Pica', multifase:'🏟 Rondas', puntajes:'🎳 Puntajes', sumapalos:'📋 Clasificación', zonafinal:'🏆 Zona Final', resultados:'📊 Promedios', ligagrupos:'🗂 Grupos', ligafechas:'📅 Fechas', ligatabla:'🏆 Tabla', ligabonus:'⚙️ Bonus' };
+  const tabLabels = { participantes: t.mode==='mixto'?'👥 Parejas':t.mode==='trio'?'🎳 Tríos':t.mode==='sexteto'?'6️⃣ Sexteto':t.mode==='equipo'?'👥 Parejas':'👤 Participantes', modalidades:'🎳 Modalidades', fases:'📋 Fases', zonas:'🗺 Zonas', bracket:'⚔️ Pica-Pica', multifase:'🏟 Rondas', puntajes:'🎳 Puntajes', sumapalos:'📋 Clasificación', repechaje:'🔄 Repechaje', zonafinal:'🏆 Zona Final', resultados:'📊 Promedios', ligagrupos:'🗂 Grupos', ligafechas:'📅 Fechas', ligatabla:'🏆 Tabla', ligabonus:'⚙️ Bonus' };
   document.getElementById('td-inner-tabs').innerHTML = tabs.map(tb =>
     `<button class="inner-tab ${activeTournamentTab===tb?'active':''}" onclick="switchTournamentTab('${tb}')">${tabLabels[tb]||tb}</button>`
   ).join('');
@@ -2967,6 +3025,9 @@ function renderTournamentTabContent(t) {
   } else if(activeTournamentTab === 'bracket') {
     body.innerHTML = buildBracketTab(t);
     bindBracketTab(t);
+  } else if(activeTournamentTab === 'repechaje') {
+    body.innerHTML = buildRepechajeTab(t);
+    bindRepechajeTab(t);
   } else if(activeTournamentTab === 'zonafinal') {
     body.innerHTML = buildZonaFinalTab(t);
     bindZonaFinalTab(t);
@@ -7537,6 +7598,7 @@ function resetBracket(tId) {
   const t = (DB.tournaments||[]).find(x=>x.id===tId);
   if(!t) return;
   t.bracket = []; t.bracketRounds = [];
+  if(t.format === 'suma+repechaje+zona') t.repechajeBracket = [];
   save(); renderTournamentDetail(); toast('🔄 Pica-pica reseteado');
 }
 
@@ -7552,7 +7614,9 @@ function buildBracketTab(t) {
   const resetBtn = canAdmin && rounds.length ? `<button class="btn btn-danger btn-sm" onclick="resetBracket('${t.id}')">🔄 Resetear</button>` : '';
 
   if(!rounds.length) {
-    const hint = t.format==='zona+elim' ? 'Completá las zonas y usá ⚔️ Iniciar pica-pica desde la pestaña Zonas.' : 'Usá ⚔️ Iniciar pica-pica para crear la primera ronda.';
+    const hint = t.format==='zona+elim' ? 'Completá las zonas y usá ⚔️ Iniciar pica-pica desde la pestaña Zonas.'
+      : t.format==='suma+repechaje+zona' ? 'Cargá los puntajes en Clasificación e iniciá los cuartos de final desde ahí.'
+      : 'Usá ⚔️ Iniciar pica-pica para crear la primera ronda.';
     return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">${genBtn}${configBtn}${resetBtn}</div>
       <div class="empty"><div class="empty-icon">⚔️</div><div class="empty-title">Pica-Pica no iniciado</div>
       <div class="empty-sub">${hint}</div></div>`;
@@ -7596,27 +7660,52 @@ function buildBracketTab(t) {
 
     // Action area below each round
     let actionHtml = '';
+    const isRepechajeFmt = t.format === 'suma+repechaje+zona';
     if(isTournamentAdmin() && allDone && isLast) {
       const winners = round.matches.map(m=>m.winner).filter(Boolean);
       const hasZF = !!t.zonaFinal;
-      const nextRoundBtn = winners.length >= 2
-        ? `<button class="btn btn-ghost btn-sm" style="margin-top:6px;width:100%" onclick="openNextRound('${t.id}','${ri}')">➕ Seguir pica-pica (${winners.length} equipos)</button>`
-        : '';
-      const zonaFinalBtn = !hasZF && winners.length >= 2
-        ? `<button class="btn btn-accent btn-sm" style="margin-top:6px;width:100%" onclick="startZonaFinalFromBracket('${t.id}')">🏆 Iniciar zona final (${winners.length} equipos)</button>`
-        : '';
-      const alreadyStarted = hasZF
-        ? `<div style="margin-top:6px;font-size:.65rem;color:#86efac;text-align:center">✓ Zona final iniciada</div>`
-        : '';
-      if(champion && winners.length <= 1) {
-        // Single match final — show champion only
-        actionHtml = `<div style="margin-top:10px;text-align:center;padding:8px;background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.2);border-radius:8px">
-          🏆 <strong style="color:var(--accent)">${champion}</strong></div>`;
+
+      if(isRepechajeFmt) {
+        const losers = round.matches.map(m => m.winner === m.a ? m.b : m.a).filter(Boolean);
+        const hasRepechaje = (t.repechajeBracket||[]).length > 0;
+        if(ri === 0 && winners.length >= 2) {
+          const semisBtn = rounds.length <= 1
+            ? `<button class="btn btn-accent btn-sm" style="margin-top:6px;width:100%" onclick="startSemisFromCuartos('${t.id}')">➕ Iniciar semifinales (${winners.length} ganadores)</button>`
+            : '';
+          const repBtn = !hasRepechaje && losers.length >= 2
+            ? `<button class="btn btn-ghost btn-sm" style="margin-top:6px;width:100%" onclick="startRepechajeFromCuartos('${t.id}')">🔄 Iniciar repechaje (${losers.length} perdedores)</button>`
+            : '';
+          const repStarted = hasRepechaje ? `<div style="margin-top:4px;font-size:.62rem;color:#f59e0b;text-align:center">✓ Repechaje iniciado</div>` : '';
+          actionHtml = rounds.length > 1 ? `<div style="margin-top:6px;font-size:.62rem;color:#86efac">✓ Ronda completada</div>` : `${semisBtn}${repBtn}${repStarted}`;
+        } else if(ri >= 1) {
+          const repDone = (t.repechajeBracket||[]).length > 0 && (t.repechajeBracket[t.repechajeBracket.length-1]?.matches||[]).every(m=>m.winner);
+          const repWinner = repDone && t.repechajeBracket.length > 0 ? t.repechajeBracket[t.repechajeBracket.length-1].matches[0]?.winner : null;
+          const canStartZF = winners.length >= 2 && !hasZF;
+          const zonaFinalBtn = canStartZF
+            ? `<button class="btn btn-accent btn-sm" style="margin-top:6px;width:100%" onclick="startZonaFinalRepechaje('${t.id}')">🏆 Iniciar zona final</button>`
+            : '';
+          const needsRep = !repDone && !repWinner ? `<div style="margin-top:4px;font-size:.62rem;color:#f59e0b;text-align:center">⏳ Esperando resultado del repechaje</div>` : '';
+          const alreadyStarted = hasZF ? `<div style="margin-top:6px;font-size:.65rem;color:#86efac;text-align:center">✓ Zona final iniciada</div>` : '';
+          actionHtml = `${zonaFinalBtn}${needsRep}${alreadyStarted}`;
+        }
       } else {
-        actionHtml = `${zonaFinalBtn}${nextRoundBtn}${alreadyStarted}`;
+        const nextRoundBtn = winners.length >= 2
+          ? `<button class="btn btn-ghost btn-sm" style="margin-top:6px;width:100%" onclick="openNextRound('${t.id}','${ri}')">➕ Seguir pica-pica (${winners.length} equipos)</button>`
+          : '';
+        const zonaFinalBtn = !hasZF && winners.length >= 2
+          ? `<button class="btn btn-accent btn-sm" style="margin-top:6px;width:100%" onclick="startZonaFinalFromBracket('${t.id}')">🏆 Iniciar zona final (${winners.length} equipos)</button>`
+          : '';
+        const alreadyStarted = hasZF
+          ? `<div style="margin-top:6px;font-size:.65rem;color:#86efac;text-align:center">✓ Zona final iniciada</div>`
+          : '';
+        if(champion && winners.length <= 1) {
+          actionHtml = `<div style="margin-top:10px;text-align:center;padding:8px;background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.2);border-radius:8px">
+            🏆 <strong style="color:var(--accent)">${champion}</strong></div>`;
+        } else {
+          actionHtml = `${zonaFinalBtn}${nextRoundBtn}${alreadyStarted}`;
+        }
       }
     } else if(!isTournamentAdmin() && allDone && isLast && champion && round.matches.length === 1 && !t.zonaFinal) {
-      // Non-admin: show champion if single final match and no zona final
       actionHtml = `<div style="margin-top:10px;text-align:center;padding:8px;background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.2);border-radius:8px">
         🏆 <strong style="color:var(--accent)">${champion}</strong></div>`;
     } else if(isTournamentAdmin() && !round.locked && allDone && !isLast) {
@@ -7773,7 +7862,10 @@ function openBracketMatchView(tId, ri, matchId) {
   if(isTournamentAdmin()) return openDynBracketMatch(tId, ri, matchId);
   // Read-only view
   const t = (DB.tournaments||[]).find(x=>x.id===tId);
-  const round = (t?.bracketRounds||[])[parseInt(ri)];
+  const useRepechaje = window._repechajeReadonly;
+  window._repechajeReadonly = false;
+  const srcRounds = useRepechaje ? (t?.repechajeBracket||[]) : (t?.bracketRounds||[]);
+  const round = srcRounds[parseInt(ri)];
   const m = round?.matches?.find(x=>x.id===matchId);
   if(!m || m.palosA == null) return;
 
@@ -7859,10 +7951,11 @@ function openBracketMatchView(tId, ri, matchId) {
 }
 
 // ── Match result entry (admin only) ───────────────────────────────────
-function openDynBracketMatch(tId, ri, matchId) {
+function openDynBracketMatch(tId, ri, matchId, bracketSource) {
   if(!isTournamentAdmin()) return;
   const t = (DB.tournaments||[]).find(x=>x.id===tId);
-  const round = (t?.bracketRounds||[])[parseInt(ri)];
+  const srcRounds = bracketSource === 'repechajeBracket' ? (t?.repechajeBracket||[]) : (t?.bracketRounds||[]);
+  const round = srcRounds[parseInt(ri)];
   const m = round?.matches?.find(x=>x.id===matchId);
   if(!m) return;
   const nameA = getEntryName(t, m.a)||'?';
@@ -8474,8 +8567,9 @@ function buildSumaPalosTab(t) {
 
   const canEdit = isTournamentAdmin() && t.status !== 'finalizado';
   const teamLabel = t.mode==='trio'?'tríos':'parejas';
-  const isSumaZona = t.format === 'suma+zona';
-  const clsN = (isSumaZona ? t.clasificadosZonaFinal : t.clasificadosMataMata) || (isSumaZona ? 4 : 8);
+  const isSumaZona = t.format === 'suma+zona' || t.format === 'suma+repechaje+zona';
+  const isRepFmt = t.format === 'suma+repechaje+zona';
+  const clsN = isRepFmt ? (t.clasificadosMataMata || 16) : (isSumaZona ? t.clasificadosZonaFinal : t.clasificadosMataMata) || (isSumaZona ? 4 : 8);
   const lineas = t.sumaLineasPorJugador || 3;
   if(!t.sumaPalosMember) t.sumaPalosMember = {};
 
@@ -8740,8 +8834,9 @@ function openSelectAdvancingModal(t, items, preSelected, onConfirm, title) {
 function startBracketFromSumapalos(tId) {
   const t = (DB.tournaments||[]).find(x=>x.id===tId);
   if(!t||!isTournamentAdmin()) return;
-  const isSumaZona = t.format === 'suma+zona';
-  const clsN = (isSumaZona ? t.clasificadosZonaFinal : t.clasificadosMataMata) || 8;
+  const isSumaZona = t.format === 'suma+zona' || t.format === 'suma+repechaje+zona';
+  const isRepFmt = t.format === 'suma+repechaje+zona';
+  const clsN = isRepFmt ? (t.clasificadosMataMata || 16) : (isSumaZona ? t.clasificadosZonaFinal : t.clasificadosMataMata) || 8;
   const ms = t.sumaPalosMember || {};
 
   const allRanked = [...t.teams].map(team => {
@@ -8759,11 +8854,31 @@ function startBracketFromSumapalos(tId) {
   const preSelected = allRanked.slice(0, clsN).map(r=>r.id);
 
   openSelectAdvancingModal(t, allRanked.map(r=>({id:r.id,label:r.name,detail:r.total})), preSelected, (selected) => {
-    startBracketFromTeams(tId, selected);
-    toast(`✓ Pica-pica iniciado con ${selected.length} equipos`);
-    activeTournamentTab = 'bracket';
-    renderTournamentDetail();
+    if(isRepFmt && selected.length === 16) {
+      _createCuartosConSeedeo(t, selected);
+      toast(`✓ Cuartos de final creados con 16 equipos`);
+      activeTournamentTab = 'bracket';
+      renderTournamentDetail();
+    } else {
+      startBracketFromTeams(tId, selected);
+      toast(`✓ Pica-pica iniciado con ${selected.length} equipos`);
+      activeTournamentTab = 'bracket';
+      renderTournamentDetail();
+    }
   });
+}
+
+function _createCuartosConSeedeo(t, teamIds) {
+  // Seedeo clásico: 1v16, 8v9, 2v15, 7v10, 3v14, 6v11, 4v13, 5v12
+  const seedPairs = [[0,15],[7,8],[1,14],[6,9],[2,13],[5,10],[3,12],[4,11]];
+  const matches = seedPairs.map(([a,b]) => ({
+    id: genId(),
+    a: teamIds[a], b: teamIds[b],
+    scoreA: null, scoreB: null, palosA: null, palosB: null, winner: null
+  }));
+  t.bracketRounds = t.bracketRounds || [];
+  t.bracketRounds.push({ id: genId(), name: 'Cuartos de final', matches, locked: false, lineasPorJugador: t.sumaLineasPorJugador || 3 });
+  save();
 }
 
 function buildResultadosTab(t) {
@@ -8992,8 +9107,8 @@ function openTournamentEdit(tId) {
   if(!t||!isAdmin()) return;
   const counts = t.countsForAvg !== false; // default true
   const showPts = (t.mode==='equipo'||t.mode==='trio'||t.mode==='sexteto');
-  const showBracketPts = t.mode!=='sexteto' && t.format==='suma+zona' && (t.bracketWinBy==='puntos');
-  const showZfPts = t.mode!=='sexteto' && t.format==='suma+zona';
+  const showBracketPts = t.mode!=='sexteto' && (t.format==='suma+zona'||t.format==='suma+repechaje+zona') && (t.bracketWinBy==='puntos');
+  const showZfPts = t.mode!=='sexteto' && (t.format==='suma+zona'||t.format==='suma+repechaje+zona');
   const teamLbl = t.mode==='trio'?'trío':t.mode==='sexteto'?'sexteto':'pareja';
   document.getElementById('mr-body').innerHTML = `
     <div class="field"><label class="label">Nombre</label><input class="input" id="te-name" value="${t.name}"></div>
@@ -9073,6 +9188,306 @@ function openTournamentEdit(tId) {
     save(); closeModal('modal-match-result'); closeModal('modal-tournament-detail'); renderView(); toast('🗑 Torneo eliminado','err');
   };
   openModal('modal-match-result');
+}
+
+// ── PICA-PICA CON REPECHAJE ───────────────────────────────────────────
+
+function startSemisFromCuartos(tId) {
+  snapshotTournament(tId);
+  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  if(!t||!isTournamentAdmin()) return;
+  const cuartos = (t.bracketRounds||[])[0];
+  if(!cuartos) return;
+  const winners = cuartos.matches.map(m=>m.winner).filter(Boolean);
+  if(winners.length < 4) { toast('Se necesitan al menos 4 ganadores de cuartos','err'); return; }
+
+  const prevLineas = cuartos.lineasPorJugador || 1;
+  document.getElementById('mr-body').innerHTML = `
+    <div style="font-size:.8rem;font-weight:700;margin-bottom:10px">Crear Semifinales</div>
+    <div style="font-size:.68rem;color:var(--muted);margin-bottom:12px">Los ${winners.length} ganadores de cuartos se enfrentan: G:C1 vs G:C2, G:C3 vs G:C4, etc.</div>
+    <div class="field"><label class="label">Líneas por jugador</label>
+      <input class="input" id="sr-lineas" type="number" min="1" max="10" value="${prevLineas}"
+        style="text-align:center;font-family:'Bebas Neue',cursive;font-size:1.5rem;width:100px">
+    </div>`;
+  document.getElementById('mr-submit').textContent = 'Crear semifinales';
+  document.getElementById('mr-submit').onclick = () => {
+    const lineas = parseInt(document.getElementById('sr-lineas')?.value) || 1;
+    const matches = [];
+    for(let i = 0; i < winners.length; i += 2) {
+      if(winners[i+1]) {
+        matches.push({ id: genId(), a: winners[i], b: winners[i+1], scoreA: null, scoreB: null, palosA: null, palosB: null, winner: null });
+      }
+    }
+    t.bracketRounds.push({ id: genId(), name: 'Semifinales', matches, locked: false, lineasPorJugador: lineas });
+
+    const losers = cuartos.matches.map(m => m.winner === m.a ? m.b : m.a).filter(Boolean);
+    if(losers.length >= 2 && !(t.repechajeBracket||[]).length) {
+      _createRepechajeFromLosers(t, losers, lineas);
+    }
+
+    save(); closeModal('modal-match-result'); renderTournamentDetail();
+    toast(`✓ Semifinales creadas + repechaje iniciado`);
+  };
+  openModal('modal-match-result');
+}
+
+function startRepechajeFromCuartos(tId) {
+  snapshotTournament(tId);
+  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  if(!t||!isTournamentAdmin()) return;
+  const cuartos = (t.bracketRounds||[])[0];
+  if(!cuartos) return;
+  const losers = cuartos.matches.map(m => m.winner === m.a ? m.b : m.a).filter(Boolean);
+  if(losers.length < 2) { toast('No hay suficientes perdedores','err'); return; }
+  const lineas = cuartos.lineasPorJugador || 1;
+  _createRepechajeFromLosers(t, losers, lineas);
+  save(); renderTournamentDetail();
+  toast(`✓ Repechaje iniciado con ${losers.length} equipos`);
+  activeTournamentTab = 'repechaje';
+  renderTournamentDetail();
+}
+
+function _createRepechajeFromLosers(t, losers, lineas) {
+  t.repechajeBracket = t.repechajeBracket || [];
+  const cuartos = (t.bracketRounds||[])[0];
+  if(!cuartos) return;
+
+  // Cruces del repechaje: P:C1 vs P:C2, P:C5 vs P:C6, P:C3 vs P:C4, P:C7 vs P:C8
+  // (perdedores de los cuartos pareados: los perdedores de la misma semifinal se cruzan)
+  const matchOrder = [];
+  const cm = cuartos.matches;
+  if(cm.length >= 8) {
+    // R1: P:C1 vs P:C2 (perdedores de C1 y C2 que iban a la misma semi)
+    matchOrder.push([_loser(cm[0]), _loser(cm[1])]);
+    // R3: P:C5 vs P:C6
+    matchOrder.push([_loser(cm[4]), _loser(cm[5])]);
+    // R2: P:C3 vs P:C4
+    matchOrder.push([_loser(cm[2]), _loser(cm[3])]);
+    // R4: P:C7 vs P:C8
+    matchOrder.push([_loser(cm[6]), _loser(cm[7])]);
+  } else {
+    for(let i = 0; i < losers.length; i += 2) {
+      if(losers[i+1]) matchOrder.push([losers[i], losers[i+1]]);
+    }
+  }
+
+  const matches = matchOrder.map(pair => ({
+    id: genId(), a: pair[0], b: pair[1],
+    scoreA: null, scoreB: null, palosA: null, palosB: null, winner: null
+  }));
+
+  t.repechajeBracket.push({ id: genId(), name: 'Ronda 1', matches, locked: false, lineasPorJugador: lineas });
+}
+
+function _loser(match) {
+  if(!match || !match.winner) return null;
+  return match.winner === match.a ? match.b : match.a;
+}
+
+function advanceRepechaje(tId) {
+  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  if(!t||!isTournamentAdmin()) return;
+  const rep = t.repechajeBracket || [];
+  if(!rep.length) return;
+  const lastRound = rep[rep.length - 1];
+  const allDone = lastRound.matches.every(m => m.winner);
+  if(!allDone) { toast('Completá todos los partidos de esta ronda','err'); return; }
+  const winners = lastRound.matches.map(m => m.winner).filter(Boolean);
+  if(winners.length < 2) {
+    toast('El repechaje ya tiene su ganador','info');
+    return;
+  }
+  const prevLineas = lastRound.lineasPorJugador || 1;
+
+  document.getElementById('mr-body').innerHTML = `
+    <div style="font-size:.8rem;font-weight:700;margin-bottom:10px">Siguiente ronda del repechaje</div>
+    <div style="font-size:.68rem;color:var(--muted);margin-bottom:12px">${winners.length} ganadores avanzan. ${winners.length === 2 ? 'Esta es la final del repechaje.' : ''}</div>
+    <div class="field"><label class="label">Líneas por jugador</label>
+      <input class="input" id="rep-lineas" type="number" min="1" max="10" value="${prevLineas}"
+        style="text-align:center;font-family:'Bebas Neue',cursive;font-size:1.5rem;width:100px">
+    </div>`;
+  document.getElementById('mr-submit').textContent = 'Crear ronda';
+  document.getElementById('mr-submit').onclick = () => {
+    const lineas = parseInt(document.getElementById('rep-lineas')?.value) || 1;
+    const matches = [];
+    for(let i = 0; i < winners.length; i += 2) {
+      if(winners[i+1]) {
+        matches.push({ id: genId(), a: winners[i], b: winners[i+1], scoreA: null, scoreB: null, palosA: null, palosB: null, winner: null });
+      }
+    }
+    const roundName = matches.length === 1 ? 'Final Repechaje' : `Ronda ${rep.length + 1}`;
+    t.repechajeBracket.push({ id: genId(), name: roundName, matches, locked: false, lineasPorJugador: lineas });
+    save(); closeModal('modal-match-result');
+    activeTournamentTab = 'repechaje';
+    renderTournamentDetail();
+    toast(`✓ ${roundName} del repechaje creada`);
+  };
+  openModal('modal-match-result');
+}
+
+// ── REPECHAJE TAB ─────────────────────────────────────────────────────
+
+function buildRepechajeTab(t) {
+  const rounds = t.repechajeBracket || [];
+
+  if(!rounds.length) {
+    const hasCuartos = (t.bracketRounds||[]).length > 0 && (t.bracketRounds[0].matches||[]).every(m=>m.winner);
+    const hint = hasCuartos
+      ? 'Los cuartos de final están completos. Iniciá el repechaje desde la pestaña Pica-Pica.'
+      : 'Primero completá los cuartos de final en la pestaña Pica-Pica.';
+    return `<div class="empty"><div class="empty-icon">🔄</div><div class="empty-title">Repechaje no iniciado</div>
+      <div class="empty-sub">${hint}</div></div>`;
+  }
+
+  const cols = rounds.map((round, ri) => {
+    const allDone = round.matches.every(m => m.winner);
+    const isLast = ri === rounds.length - 1;
+    const isFinal = round.matches.length === 1;
+    const champion = allDone && isFinal ? getEntryName(t, round.matches[0].winner) : null;
+
+    const matchCards = round.matches.map(m => {
+      const nameA = m.a ? getEntryName(t, m.a) : '—';
+      const nameB = m.b ? getEntryName(t, m.b) : '—';
+      const clsA = m.winner === m.a ? 'winner' : m.winner ? 'loser' : '';
+      const clsB = m.winner === m.b ? 'winner' : m.winner ? 'loser' : '';
+      const hasResult = m.palosA != null || m.palosB != null;
+      const clickable = isTournamentAdmin() || hasResult;
+      const click = clickable ? `onclick="openRepechajeMatchView('${t.id}','${ri}','${m.id}')"` : '';
+      function flattenMs(ms) {
+        if(!ms || !ms.length) return '';
+        const vals = ms.map(v => Array.isArray(v) ? v.reduce((s,x)=>s+x,0) : (v||0)).filter(v=>v>0);
+        return vals.length ? `<span style="font-size:.55rem;color:var(--muted);margin-left:4px">(${vals.join('+')})</span>` : '';
+      }
+      const msDetailA = flattenMs(m.member_scores_a);
+      const msDetailB = flattenMs(m.member_scores_b);
+      const showPts = t.bracketWinBy === 'puntos' && m.ptsA != null;
+      const ptsLabelA = showPts ? `<span style="font-size:.6rem;color:#f59e0b;margin-left:4px;font-weight:700">${m.ptsA%1?m.ptsA.toFixed(1):m.ptsA}pts</span>` : '';
+      const ptsLabelB = showPts ? `<span style="font-size:.6rem;color:#f59e0b;margin-left:4px;font-weight:700">${m.ptsB%1?m.ptsB.toFixed(1):m.ptsB}pts</span>` : '';
+      return `<div class="bracket-match" ${click} style="${clickable?'cursor:pointer':''}">
+        <div class="bracket-slot ${clsA}">
+          <span>${nameA}</span>
+          <span class="slot-score">${m.palosA != null ? m.palosA : ''}${ptsLabelA}${msDetailA}</span>
+        </div>
+        <div class="bracket-slot ${clsB}">
+          <span>${nameB}</span>
+          <span class="slot-score">${m.palosB != null ? m.palosB : ''}${ptsLabelB}${msDetailB}</span>
+        </div>
+      </div>`;
+    }).join('');
+
+    let actionHtml = '';
+    if(isTournamentAdmin() && allDone && isLast) {
+      const winners = round.matches.map(m=>m.winner).filter(Boolean);
+      if(isFinal && champion) {
+        actionHtml = `<div style="margin-top:10px;text-align:center;padding:8px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:8px">
+          🔄 5° finalista: <strong style="color:#f59e0b">${champion}</strong></div>`;
+      } else if(winners.length >= 2) {
+        actionHtml = `<button class="btn btn-ghost btn-sm" style="margin-top:6px;width:100%;border-color:rgba(245,158,11,.4);color:#f59e0b" onclick="advanceRepechaje('${t.id}')">➕ Siguiente ronda (${winners.length} equipos)</button>`;
+      }
+    } else if(!isTournamentAdmin() && allDone && isLast && isFinal && champion) {
+      actionHtml = `<div style="margin-top:10px;text-align:center;padding:8px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:8px">
+        🔄 5° finalista: <strong style="color:#f59e0b">${champion}</strong></div>`;
+    } else if(allDone && !isLast) {
+      actionHtml = `<div style="margin-top:6px;font-size:.62rem;color:#86efac">✓ Ronda completada</div>`;
+    }
+
+    const lineasLabel = (round.lineasPorJugador && round.lineasPorJugador > 1) ? ` <span style="font-size:.52rem;color:#f59e0b;font-family:'Nunito',sans-serif">(${round.lineasPorJugador}L)</span>` : '';
+    return `<div class="bracket-round">
+      <div class="bracket-round-title" style="color:#f59e0b;border-bottom-color:rgba(245,158,11,.3)">${round.name}${lineasLabel}</div>
+      ${matchCards}
+      ${actionHtml}
+    </div>`;
+  }).join('');
+
+  const resetBtn = isTournamentAdmin() ? `<button class="btn btn-danger btn-sm" onclick="resetRepechaje('${t.id}')">🔄 Resetear repechaje</button>` : '';
+  const autoFillBtn = isTournamentAdmin() && rounds.length ? `<button class="btn btn-ghost btn-sm" id="td-auto-results-repechaje">🎲 Auto-completar</button>` : '';
+
+  return `<div style="margin-bottom:10px;padding:10px 12px;background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.2);border-radius:10px">
+    <div style="font-size:.72rem;color:#f59e0b;font-weight:700">🔄 REPECHAJE</div>
+    <div style="font-size:.62rem;color:var(--muted);margin-top:2px">Los perdedores de cuartos compiten hasta que quede 1 → 5° finalista para la zona final.</div>
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">${resetBtn}${autoFillBtn}</div>
+  <div class="bracket-wrap"><div class="bracket">${cols}</div></div>`;
+}
+
+function bindRepechajeTab(t) {
+  document.getElementById('td-auto-results-repechaje')?.addEventListener('click', () => {
+    const rounds = t.repechajeBracket || [];
+    if(!rounds.length) return;
+    const lastRound = rounds[rounds.length - 1];
+    lastRound.matches.forEach(m => {
+      if(m.winner) return;
+      const teamA = (t.teams||[]).find(x=>x.id===m.a);
+      const teamB = (t.teams||[]).find(x=>x.id===m.b);
+      if(!teamA || !teamB) return;
+      const lineas = lastRound.lineasPorJugador || 1;
+      const msA = (teamA.members||[]).map(() => Array.from({length:lineas},()=>Math.floor(Math.random()*131)+140));
+      const msB = (teamB.members||[]).map(() => Array.from({length:lineas},()=>Math.floor(Math.random()*131)+140));
+      m.member_scores_a = msA;
+      m.member_scores_b = msB;
+      m.palosA = msA.flat().reduce((s,v)=>s+v,0);
+      m.palosB = msB.flat().reduce((s,v)=>s+v,0);
+      if(t.bracketWinBy === 'puntos') {
+        const bp = calcBracketPointsPerLine(msA, msB, t.bracketPtsInd||1, t.bracketPtsEq||2);
+        m.ptsA = bp.ptsA; m.ptsB = bp.ptsB;
+        m.winner = bp.ptsA > bp.ptsB ? m.a : bp.ptsB > bp.ptsA ? m.b : (m.palosA >= m.palosB ? m.a : m.b);
+      } else {
+        m.winner = m.palosA >= m.palosB ? m.a : m.b;
+      }
+    });
+    invalidateScoreCache(); save(); renderTournamentDetail();
+    toast('✓ Resultados auto-completados');
+  });
+}
+
+function openRepechajeMatchView(tId, ri, matchId) {
+  if(isTournamentAdmin()) return openDynBracketMatch(tId, ri, matchId, 'repechajeBracket');
+  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const round = (t?.repechajeBracket||[])[parseInt(ri)];
+  const m = round?.matches?.find(x=>x.id===matchId);
+  if(!m || m.palosA == null) return;
+  window._repechajeReadonly = true;
+  openBracketMatchView(tId, ri, matchId);
+}
+
+function resetRepechaje(tId) {
+  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  if(!t||!isTournamentAdmin()) return;
+  appConfirm('¿Resetear todo el repechaje?').then(ok => {
+    if(!ok) return;
+    t.repechajeBracket = [];
+    save(); renderTournamentDetail(); toast('🔄 Repechaje reseteado');
+  });
+}
+
+function startZonaFinalRepechaje(tId) {
+  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  if(!t||!isTournamentAdmin()) return;
+  const rounds = t.bracketRounds||[];
+  if(rounds.length < 2) { toast('Necesitás completar las semifinales','err'); return; }
+  const semis = rounds[rounds.length - 1];
+  const semiWinners = semis.matches.map(m=>m.winner).filter(Boolean);
+
+  const rep = t.repechajeBracket||[];
+  let repWinner = null;
+  if(rep.length > 0) {
+    const lastRepRound = rep[rep.length - 1];
+    if(lastRepRound.matches.length === 1 && lastRepRound.matches[0].winner) {
+      repWinner = lastRepRound.matches[0].winner;
+    }
+  }
+
+  if(semiWinners.length < 4) { toast('Necesitás al menos 4 ganadores de semifinales','err'); return; }
+  if(!repWinner) { toast('El repechaje aún no tiene ganador','err'); return; }
+
+  const finalists = [...semiWinners, repWinner];
+  const items = finalists.map(id => {
+    const isSW = semiWinners.includes(id);
+    return {id, label: getEntryName(t,id), detail: isSW ? 'Semi' : 'Repechaje'};
+  });
+  openSelectAdvancingModal(t, items, finalists, (selected) => {
+    _createZonaFinal(t, selected);
+  }, 'Zona final: 4 de semis + 1 del repechaje');
 }
 
 // ── ZONA FINAL (suma+zona) ────────────────────────────────────────────
