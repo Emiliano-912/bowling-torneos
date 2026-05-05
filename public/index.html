@@ -7855,7 +7855,10 @@ function openCreateRound(tId, available, roundIdx, opts) {
     if(!matches.length) { toast('Agregá al menos un partido','err'); return; }
     t[bracketKey] = t[bracketKey] || [];
     t[bracketKey].push({ id: genId(), name, matches, locked: false, lineasPorJugador: lineas });
-    save(); closeModal('modal-match-result'); switchTournamentTab(targetTab); toast(`✓ Ronda "${name}" creada (${lineas} línea${lineas!==1?'s':''}/jugador)`);
+    save(); closeModal('modal-match-result');
+    toast(`✓ Ronda "${name}" creada (${lineas} línea${lineas!==1?'s':''}/jugador)`);
+    if(opts.onAfterSave) { setTimeout(() => opts.onAfterSave(), 150); }
+    else { switchTournamentTab(targetTab); }
   };
   openModal('modal-match-result');
   setTimeout(()=>document.getElementById('cr-name')?.select(), 200);
@@ -9182,7 +9185,17 @@ function startSemisFromCuartos(tId) {
   if(!cuartos) return;
   const winners = cuartos.matches.map(m=>m.winner).filter(Boolean);
   if(winners.length < 4) { toast('Se necesitan al menos 4 ganadores de cuartos','err'); return; }
-  openCreateRound(tId, winners, 1, { suggestedName: 'Semifinales' });
+  const losers = cuartos.matches.map(m => m.winner === m.a ? m.b : m.a).filter(Boolean);
+  openCreateRound(tId, winners, 1, {
+    suggestedName: 'Semifinales',
+    onAfterSave: () => {
+      if(losers.length >= 2 && !(t.repechajeBracket||[]).length) {
+        openCreateRound(tId, losers, 0, { bracketKey: 'repechajeBracket', targetTab: 'repechaje', suggestedName: 'Ronda 1 Repechaje' });
+      } else {
+        switchTournamentTab('bracket');
+      }
+    }
+  });
 }
 
 function startRepechajeFromCuartos(tId) {
