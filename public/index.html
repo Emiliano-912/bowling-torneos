@@ -7740,12 +7740,13 @@ function buildBracketTab(t) {
 
     const lineasLabel = (round.lineasPorJugador && round.lineasPorJugador > 1) ? ` <span style="font-size:.52rem;color:var(--accent);font-family:'Nunito',sans-serif">(${round.lineasPorJugador}L)</span>` : '';
     const deleteRoundBtn = isTournamentAdmin() && rounds.length > 1
-      ? `<button class="btn btn-danger btn-sm" style="padding:1px 6px;font-size:.6rem;margin-left:6px;vertical-align:middle" onclick="event.stopPropagation();deleteBracketRound('${t.id}',${ri})" title="Eliminar esta ronda">🗑</button>`
+      ? `<button class="btn btn-danger btn-sm" style="padding:2px 8px;font-size:.65rem;margin-top:4px;display:block" onclick="event.stopPropagation();deleteBracketRound('${t.id}',${ri})">🗑 Eliminar</button>`
       : '';
     return `<div class="bracket-round">
-      <div class="bracket-round-title">${round.name}${lineasLabel}${deleteRoundBtn}</div>
+      <div class="bracket-round-title">${round.name}${lineasLabel}</div>
       ${matchCards}
       ${actionHtml}
+      ${deleteRoundBtn}
     </div>`;
   }).join('');
 
