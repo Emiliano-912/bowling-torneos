@@ -9034,6 +9034,26 @@ function buildTournamentPlayerAverages(t) {
           });
         });
       });
+      // Repechaje matches
+      (t.repechajeBracket||[]).forEach(round => {
+        (round.matches||[]).forEach(bm => {
+          const side = bm.a === team.id ? 'a' : bm.b === team.id ? 'b' : null;
+          if(!side) return;
+          const ms = side==='a' ? (bm.member_scores_a||[]) : (bm.member_scores_b||[]);
+          (team.members||[]).forEach((pid, i) => {
+            const val = ms[i];
+            if(!val) return;
+            const scores = Array.isArray(val) ? val.filter(v=>v>0) : (val > 0 ? [val] : []);
+            scores.forEach(v => { _addLine(pid, v, team.name); });
+          });
+        });
+      });
+      // Classification lines (sumaPalosMember)
+      if(t.sumaPalosMember?.[team.id]) {
+        (team.members||[]).forEach(pid => {
+          (t.sumaPalosMember[team.id][pid]||[]).forEach(v => { _addLine(pid, v, team.name); });
+        });
+      }
     });
     rows.forEach(r => { r.avg = r.lines ? r.total/r.lines : 0; });
   }
