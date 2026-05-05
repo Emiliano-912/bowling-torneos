@@ -6832,6 +6832,7 @@ function buildZonasTab(t) {
       <div style="margin-bottom:10px;display:flex;align-items:center;gap:8px">
         <div class="zona-rr-title" style="margin-bottom:0">${z.name}</div>
         ${!viewingArchivedFase && isTournamentAdmin() ? `<button class="btn btn-ghost btn-sm" style="padding:2px 7px;font-size:.7rem" onclick="openRenameZone('${t.id}','${z.id}')">✏️</button>` : ''}
+        ${!viewingArchivedFase && isTournamentAdmin() && (zonesToRender||[]).length > 1 ? `<button class="btn btn-danger btn-sm" style="padding:2px 7px;font-size:.65rem" onclick="deleteZone('${t.id}','${z.id}')">🗑</button>` : ''}
         <button class="btn btn-ghost btn-sm" style="margin-left:auto;padding:2px 7px;font-size:.7rem" onclick="captureZone('${t.id}','${z.id}')" title="Descargar imagen de la zona">📸</button>
       </div>
       <!-- Always-expanded table with PTS/POS -->
@@ -7006,6 +7007,19 @@ function openRenameFase(tId, idx) {
   };
   setTimeout(() => document.getElementById('rf-name')?.select(), 100);
   openModal('modal-match-result');
+}
+
+async function deleteZone(tId, zId) {
+  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  if(!t||!isTournamentAdmin()) return;
+  const z = (t.zones||[]).find(x=>x.id===zId);
+  if(!z) return;
+  if((t.zones||[]).length <= 1) { toast('No se puede eliminar la única zona','err'); return; }
+  const ok = await appConfirm(`¿Eliminar "${z.name}" y todos sus resultados?`);
+  if(!ok) return;
+  t.zones = t.zones.filter(x=>x.id!==zId);
+  invalidateScoreCache(); save(); renderTournamentDetail();
+  toast('🗑 Zona eliminada');
 }
 
 function openRenameZone(tId, zId) {
