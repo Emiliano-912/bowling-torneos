@@ -8494,6 +8494,7 @@ function buildSextPuntajesTab(t) {
   let bestIndLine = 0, bestIndPid = null, bestIndTeamId = null;
   let bestIndTotal = 0, bestIndTotalPid = null, bestIndTotalTeamId = null;
   let bestTeamTotal = 0, bestTeamId = null;
+  let bestTeamCol = 0, bestTeamColIdx = -1, bestTeamColTeamId = null;
 
   const teamsSorted = [...t.teams].sort((a, b) => {
     const pA = Object.values(scores[a.id]||{}).reduce((s,ls)=>s+(ls||[]).reduce((x,v)=>x+(v||0),0),0);
@@ -8505,13 +8506,18 @@ function buildSextPuntajesTab(t) {
     const tScores = scores[team.id] || {};
     const tTotal = Object.values(tScores).reduce((s,ls)=>s+(ls||[]).reduce((a,v)=>a+(v||0),0),0);
     if(tTotal > bestTeamTotal) { bestTeamTotal = tTotal; bestTeamId = team.id; }
+    const cols = Array.from({length: lineas}, () => 0);
     (team.members||[]).forEach(pid => {
       const pLines = tScores[pid] || [];
       const pTotal = pLines.reduce((s,v)=>s+(v||0),0);
       if(pTotal > bestIndTotal) { bestIndTotal = pTotal; bestIndTotalPid = pid; bestIndTotalTeamId = team.id; }
-      pLines.forEach(v => {
+      pLines.forEach((v, li) => {
         if((v||0) > bestIndLine) { bestIndLine = v; bestIndPid = pid; bestIndTeamId = team.id; }
+        if(li < lineas) cols[li] += (v||0);
       });
+    });
+    cols.forEach((ct, ci) => {
+      if(ct > bestTeamCol) { bestTeamCol = ct; bestTeamColIdx = ci; bestTeamColTeamId = team.id; }
     });
   });
 
@@ -8519,7 +8525,11 @@ function buildSextPuntajesTab(t) {
   const highlights = [];
   if(bestIndLine > 0) {
     const bp = DB.players.find(x=>x.id===bestIndPid);
-    highlights.push(`<span style="font-size:.68rem;background:rgba(251,146,60,.08);border:1px solid rgba(251,146,60,.3);padding:3px 8px;border-radius:6px;color:#fb923c">🔥 Mejor línea: <strong>${bestIndLine}</strong> — ${esc(bp?.name||'?')}</span>`);
+    highlights.push(`<span style="font-size:.68rem;background:rgba(251,146,60,.08);border:1px solid rgba(251,146,60,.3);padding:3px 8px;border-radius:6px;color:#fb923c">🔥 Mejor línea individual: <strong>${bestIndLine}</strong> — ${esc(bp?.name||'?')}</span>`);
+  }
+  if(bestTeamCol > 0) {
+    const btc = teamsSorted.find(x=>x.id===bestTeamColTeamId);
+    highlights.push(`<span style="font-size:.68rem;background:rgba(56,189,248,.08);border:1px solid rgba(56,189,248,.3);padding:3px 8px;border-radius:6px;color:#38bdf8">⚡ Mejor línea en equipo: <strong>${bestTeamCol}</strong> — ${esc(btc?.name||'?')} (L${bestTeamColIdx+1})</span>`);
   }
   if(bestTeamTotal > 0) {
     const bt = teamsSorted.find(x=>x.id===bestTeamId);
@@ -8572,15 +8582,17 @@ function buildSextPuntajesTab(t) {
     }).join('');
 
     const teamTotalSum = colTotals.reduce((s,v)=>s+v, 0);
-    const colTotalSlots = colTotals.map(ct =>
-      `<div style="display:flex;flex-direction:column;align-items:center;gap:2px">
-        <span style="font-family:'Bebas Neue',cursive;font-size:1.15rem;font-weight:700;width:46px;text-align:center;display:inline-block;color:var(--text)">${ct||'—'}</span>
-      </div>`
-    ).join('');
+    const colTotalSlots = colTotals.map((ct, ci) => {
+      const isBestCol = ct > 0 && ct === bestTeamCol && ci === bestTeamColIdx && team.id === bestTeamColTeamId;
+      const colColor = isBestCol ? 'color:#38bdf8' : 'color:var(--text)';
+      return `<div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+        <span style="font-family:'Bebas Neue',cursive;font-size:1.3rem;width:46px;text-align:center;display:inline-block;${colColor}">${ct||'—'}</span>
+      </div>`;
+    }).join('');
     const totalsRow = `<div style="padding:10px 0 4px;border-top:2px solid var(--border2);margin-top:4px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
         <span style="font-size:.65rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.5px">Total equipo</span>
-        <span style="font-family:'Bebas Neue',cursive;font-size:1.3rem;color:var(--accent);font-weight:700">${teamTotalSum||'—'}</span>
+        <span style="font-family:'Bebas Neue',cursive;font-size:1.4rem;color:var(--accent)">${teamTotalSum||'—'}</span>
       </div>
       <div style="display:flex;gap:5px">${colTotalSlots}</div>
     </div>`;
@@ -8724,19 +8736,28 @@ function buildSumaPalosTab(t) {
     return { id: team.id, name: team.name, members: team.members||[], total };
   }).sort((a,b) => b.total - a.total);
 
-  // Find best individual line and best team total for highlights
+  // Find best individual line, best team total, and best team column for highlights
   let bestIndLine = 0;
   let bestIndPid = null;
   let bestIndTeamId = null;
   let bestTeamTotal = 0;
   let bestTeamId = null;
+  let bestTeamCol = 0;
+  let bestTeamColIdx = -1;
+  let bestTeamColTeamId = null;
   ranked.forEach(r => {
     if(r.total > bestTeamTotal) { bestTeamTotal = r.total; bestTeamId = r.id; }
     const ms = t.sumaPalosMember[r.id] || {};
+    // Per-column totals for this team
+    const cols = Array.from({length: lineas}, () => 0);
     (r.members||[]).forEach(pid => {
-      (ms[pid]||[]).forEach(v => {
+      (ms[pid]||[]).forEach((v,li) => {
         if((v||0) > bestIndLine) { bestIndLine = v; bestIndPid = pid; bestIndTeamId = r.id; }
+        if(li < lineas) cols[li] += (v||0);
       });
+    });
+    cols.forEach((ct, ci) => {
+      if(ct > bestTeamCol) { bestTeamCol = ct; bestTeamColIdx = ci; bestTeamColTeamId = r.id; }
     });
   });
 
@@ -8771,7 +8792,11 @@ function buildSumaPalosTab(t) {
   const highlights = [];
   if(bestIndLine > 0) {
     const bp = DB.players.find(x=>x.id===bestIndPid);
-    highlights.push(`<span style="font-size:.68rem;background:rgba(251,146,60,.08);border:1px solid rgba(251,146,60,.3);padding:3px 8px;border-radius:6px;color:#fb923c">🔥 Mejor línea: <strong>${bestIndLine}</strong> — ${esc(bp?.name||'?')}</span>`);
+    highlights.push(`<span style="font-size:.68rem;background:rgba(251,146,60,.08);border:1px solid rgba(251,146,60,.3);padding:3px 8px;border-radius:6px;color:#fb923c">🔥 Mejor línea individual: <strong>${bestIndLine}</strong> — ${esc(bp?.name||'?')}</span>`);
+  }
+  if(bestTeamCol > 0) {
+    const btc = ranked.find(r=>r.id===bestTeamColTeamId);
+    highlights.push(`<span style="font-size:.68rem;background:rgba(56,189,248,.08);border:1px solid rgba(56,189,248,.3);padding:3px 8px;border-radius:6px;color:#38bdf8">⚡ Mejor línea en equipo: <strong>${bestTeamCol}</strong> — ${esc(btc?.name||'?')} (L${bestTeamColIdx+1})</span>`);
   }
   if(bestTeamTotal > 0) {
     const bt = ranked.find(r=>r.id===bestTeamId);
@@ -8828,13 +8853,15 @@ function buildSumaPalosTab(t) {
 
     // Team totals row per column
     const teamTotalSum = colTotals.reduce((s,v)=>s+v, 0);
-    const colTotalSlots = colTotals.map(ct =>
-      `<span style="font-family:'Bebas Neue',cursive;font-size:1.15rem;font-weight:700;width:48px;text-align:center;display:inline-block;color:var(--text)">${ct||'—'}</span>`
-    ).join('');
+    const colTotalSlots = colTotals.map((ct, ci) => {
+      const isBestCol = ct > 0 && ct === bestTeamCol && ci === bestTeamColIdx && r.id === bestTeamColTeamId;
+      const colColor = isBestCol ? 'color:#38bdf8' : 'color:var(--text)';
+      return `<span style="font-family:'Bebas Neue',cursive;font-size:1.3rem;width:48px;text-align:center;display:inline-block;${colColor}">${ct||'—'}</span>`;
+    }).join('');
     const totalsRow = `<div style="padding:10px 0 4px;border-top:2px solid var(--border2);margin-top:4px">
-      <div style="display:flex;align-items:center;gap:4px;margin-bottom:2px">
+      <div style="display:flex;align-items:center;gap:4px;margin-bottom:4px">
         <span style="font-size:.65rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.5px">Total equipo</span>
-        <span style="margin-left:auto;font-family:'Bebas Neue',cursive;font-size:1.3rem;color:var(--accent);font-weight:700">${teamTotalSum||'—'}</span>
+        <span style="margin-left:auto;font-family:'Bebas Neue',cursive;font-size:1.4rem;color:var(--accent)">${teamTotalSum||'—'}</span>
       </div>
       <div style="display:flex;gap:3px">${colTotalSlots}</div>
     </div>`;
