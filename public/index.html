@@ -414,6 +414,28 @@ tbody td { padding: 10px 14px; font-size: 0.84rem; }
 }
 #admin-lock-btn.unlocked { color: var(--accent); border-color: rgba(59,130,246,.5); background: rgba(59,130,246,.08); }
 #admin-lock-btn:hover { transform: scale(1.08); }
+
+/* ── LOADING OVERLAY ───────────────────────────────────── */
+#loading-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(6,10,20,.7);
+  z-index: 200;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(2px);
+}
+#loading-overlay.active { display: flex; }
+.loading-spinner {
+  width: 40px; height: 40px;
+  border: 3px solid var(--border2);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
 .admin-only { display: none !important; }
 body.admin-mode .admin-only { display: inline-flex !important; }
 body.admin-mode .admin-only-block { display: block !important; }
@@ -961,9 +983,9 @@ body.admin-mode .admin-only-block { display: block !important; }
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px" id="td-badges"></div>
       </div>
       <div style="display:flex;gap:8px;align-items:center">
-        <button class="btn btn-ghost btn-sm" id="td-screenshot-btn" onclick="captureTab()" title="Descargar imagen">📸</button>
+        <button class="btn btn-ghost btn-sm" id="td-screenshot-btn" onclick="captureTab()" title="Descargar imagen" aria-label="Descargar imagen">📸</button>
         <button class="btn btn-accent btn-sm admin-only" id="td-edit-btn">✏️ Editar</button>
-        <button class="btn-icon" onclick="closeModal('modal-tournament-detail')">✕</button>
+        <button class="btn-icon" onclick="closeModal('modal-tournament-detail')" aria-label="Cerrar">✕</button>
       </div>
     </div>
     <div class="inner-tabs" id="td-inner-tabs"></div>
@@ -984,9 +1006,12 @@ body.admin-mode .admin-only-block { display: block !important; }
   </div>
 </div>
 
+<!-- Loading overlay -->
+<div id="loading-overlay" role="status" aria-label="Cargando"><div class="loading-spinner"></div></div>
+
 <!-- Admin lock button -->
-<button id="admin-lock-btn" title="Admin" onclick="adminToggle()">🔒</button>
-<button id="admin-pw-btn" class="admin-only" title="Cambiar contraseña" onclick="openChangePassword()" style="position:fixed;bottom:22px;right:60px;width:40px;height:40px;border-radius:50%;border:1.5px solid var(--border);background:var(--surface);font-size:1rem;cursor:pointer;z-index:99;display:none">⚙️</button>
+<button id="admin-lock-btn" title="Admin" aria-label="Modo administrador" onclick="adminToggle()">🔒</button>
+<button id="admin-pw-btn" class="admin-only" title="Cambiar contraseña" aria-label="Cambiar contraseña" onclick="openChangePassword()" style="position:fixed;bottom:22px;right:60px;width:40px;height:40px;border-radius:50%;border:1.5px solid var(--border);background:var(--surface);font-size:1rem;cursor:pointer;z-index:99;display:none">⚙️</button>
 
 <!-- Install Banner -->
 <div id="install-banner">
@@ -997,16 +1022,49 @@ body.admin-mode .admin-only-block { display: block !important; }
       <span>Accedé sin internet, como una app nativa</span>
     </div>
     <button class="btn btn-accent btn-sm" id="install-btn">Instalar</button>
-    <button class="btn-icon" onclick="document.getElementById('install-banner').style.display='none'" style="font-size:.8rem">✕</button>
+    <button class="btn-icon" onclick="document.getElementById('install-banner').style.display='none'" style="font-size:.8rem" aria-label="Cerrar banner">✕</button>
   </div>
 </div>
 
 <script>
 'use strict';
+
+// ── SECURITY: HTML sanitization ──────────────────────────────────────
+function esc(str) {
+  if (str == null) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+// ── PERFORMANCE: debounce ────────────────────────────────────────────
+function debounce(fn, ms) {
+  let timer;
+  return function(...args) { clearTimeout(timer); timer = setTimeout(() => fn.apply(this, args), ms); };
+}
+
+// ── UX: loading overlay ──────────────────────────────────────────────
+function showLoading() { document.getElementById('loading-overlay')?.classList.add('active'); }
+function hideLoading() { document.getElementById('loading-overlay')?.classList.remove('active'); }
+
+// ── CODE QUALITY: constantes de modo ─────────────────────────────────
+const MODE_LABELS = { individual:'Individual', equipo:'Parejas', trio:'Tríos', sexteto:'Sexteto', mixto:'Mixto' };
+function teamModeLabel(mode) { return mode==='trio'?'tríos':mode==='sexteto'?'sextetos':'parejas'; }
+
+// ── FEATURE: exportar CSV de rankings ────────────────────────────────
+function exportPlayersCSV() {
+  window.location.href = '/api/export-csv';
+  toast('📥 Descargando CSV...');
+}
+
 // ── DATA ──────────────────────────────────────────────────────────────
 const SK = 'bowling_mgr_v2';
 let _serverPassword = sessionStorage.getItem('bowling_admin_pw') || '';
 let DB = loadLocal();
+let _tournamentMap = new Map();
+function rebuildTournamentMap() {
+  _tournamentMap.clear();
+  (DB.tournaments||[]).forEach(t => _tournamentMap.set(t.id, t));
+}
+function getTournament(id) { return _tournamentMap.get(id) || (DB.tournaments||[]).find(x=>x.id===id); }
 
 // Local fallback
 function loadLocal() {
@@ -1026,12 +1084,13 @@ async function loadFromServer() {
       DB = json.data;
       if(!DB.tournaments) DB.tournaments = [];
       if(!DB.players) DB.players = [];
-      saveLocal(); // cache locally
+      rebuildTournamentMap();
+      saveLocal();
       invalidateScoreCache();
       renderView();
       return true;
     }
-  } catch(e) { console.log('Server offline, using local data'); }
+  } catch(e) { toast('Servidor offline, usando datos locales','err'); }
   return false;
 }
 
@@ -1042,7 +1101,7 @@ let _tournamentSnapshot = null;
 let _snapshotTournamentId = null;
 
 function snapshotTournament(tId) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t) return;
   _snapshotTournamentId = tId;
   _tournamentSnapshot = JSON.parse(JSON.stringify(t));
@@ -1062,7 +1121,7 @@ function undoTournament() {
 function save() {
   saveLocal();
   invalidateScoreCache();
-  // Push to server if admin
+  rebuildTournamentMap();
   if(_serverPassword) {
     fetch('/api/data', {
       method: 'POST',
@@ -1077,6 +1136,8 @@ function save() {
             adminMode = false;
             toast('⚠ Sesión expirada, volvé a iniciar sesión','err');
             renderView();
+          } else {
+            toast('⚠ Error al guardar: ' + (j.error||'desconocido'),'err');
           }
         }).catch(()=>{});
       }
@@ -1104,7 +1165,7 @@ async function captureSection(elementId, filename) {
   if(!el) { toast('No hay contenido para capturar','err'); return; }
 
   // Get tournament name for header
-  const t = (DB.tournaments||[]).find(x=>x.id===activeTournamentId);
+  const t = getTournament(activeTournamentId);
   const tName = t ? t.name : '';
 
   // Create a wrapper with dark bg and header
@@ -1178,7 +1239,7 @@ async function capturePromedios() {
     return `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:#101830;border:1px solid #1a2540;border-radius:10px${rk<=3?';border-left:3px solid '+posColor:''}">
       <div style="font-family:'Bebas Neue',cursive;font-size:1.3rem;color:${posColor};min-width:28px;text-align:center">${rk}</div>
       <div style="flex:1;min-width:0">
-        <div style="font-weight:700;font-size:.82rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.name}</div>
+        <div style="font-weight:700;font-size:.82rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.name)}</div>
         <div style="display:flex;align-items:center;gap:6px;margin-top:2px">
           <span style="font-size:.55rem;padding:1px 6px;border-radius:4px;background:${col}22;color:${col};border:1px solid ${col}44;font-weight:700">${r.cat}</span>
           <span style="font-size:.6rem;color:#506080">${r.lines} línea${r.lines!==1?'s':''}</span>
@@ -1256,14 +1317,14 @@ async function capturePromedios() {
 }
 
 function captureTab(filename) {
-  const t = (DB.tournaments||[]).find(x=>x.id===activeTournamentId);
+  const t = getTournament(activeTournamentId);
   const tName = t ? t.name.replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ ]/g,'').replace(/ +/g,'_') : 'torneo';
   const tabName = activeTournamentTab || 'vista';
   captureSection('td-body', filename || `${tName}_${tabName}`);
 }
 
 function captureZone(tId, zoneId) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t) return;
   const tName = t.name.replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ ]/g,'').replace(/ +/g,'_');
   let z = (t.zones||[]).find(x=>x.id===zoneId);
@@ -1315,7 +1376,7 @@ function openChangeCat(playerId) {
   if(!p || !isAdmin()) return;
   const opts = CATS.map(c => `<option value="${c}" ${c===p.cat?'selected':''}>${c}</option>`).join('');
   document.getElementById('mr-body').innerHTML = `
-    <div style="font-weight:700;font-size:.88rem;margin-bottom:10px">Cambiar categoría de ${p.name}</div>
+    <div style="font-weight:700;font-size:.88rem;margin-bottom:10px">Cambiar categoría de ${esc(p.name)}</div>
     <div style="font-size:.68rem;color:var(--muted);margin-bottom:12px">El cambio NO afecta torneos en curso ni terminados.</div>
     <div class="field"><label class="label">Categoría actual: <strong>${p.cat}</strong></label>
       <select class="input" id="chcat-val" style="font-size:1.1rem">${opts}</select>
@@ -1650,7 +1711,7 @@ function buildPlayers() {
       const spark = realScores.length>=3 ? `<canvas class="spark" data-id="${p.id}" style="width:100%;height:26px;display:block;margin-top:8px"></canvas>` : `<div style="height:26px;margin-top:8px;display:flex;align-items:center;font-size:.72rem;color:var(--muted)">Sin líneas aún</div>`;
       return `<div class="player-card" onclick="openDetail('${p.id}')">
         <div class="player-card-top">
-          <div><div class="player-name">${p.name}</div><span class="badge ${CAT_CLS[p.cat]}">${p.cat}</span></div>
+          <div><div class="player-name">${esc(p.name)}</div><span class="badge ${CAT_CLS[p.cat]}">${esc(p.cat)}</span></div>
           <div style="text-align:right"><div class="player-avg" style="color:${col}">${realScores.length?fmtAvg(a):'—'}</div><div class="player-lines">${realScores.length} líneas</div></div>
         </div>${spark}
       </div>`;
@@ -1658,17 +1719,19 @@ function buildPlayers() {
   }
 
   const addBtn = isAdmin() ? `<button class="btn btn-accent" style="margin-left:auto" onclick="openAddPlayer()">+ Jugador</button>
-    <button class="btn btn-ghost" onclick="openGeneratePlayers()" title="Generar jugadores de prueba">🎲</button>` : '';
+    <button class="btn btn-ghost" onclick="openGeneratePlayers()" title="Generar jugadores de prueba" aria-label="Generar jugadores de prueba">🎲</button>` : '';
+  const csvBtn = DB.players.length ? `<button class="btn btn-ghost btn-sm" onclick="exportPlayersCSV()" title="Exportar CSV" aria-label="Exportar jugadores a CSV">📥 CSV</button>` : '';
   return `
     <div class="filter-bar">
       <div class="search-wrap"><span class="search-icon">🔍</span><input class="input" id="p-search" placeholder="Buscar..." value="${filterQ}"></div>
       <div class="cat-chips">${chips}</div>
+      ${csvBtn}
       ${addBtn}
     </div>
     ${body}`;
 }
 function bindPlayers() {
-  document.getElementById('p-search')?.addEventListener('input', e=>{ filterQ=e.target.value; renderView(); });
+  document.getElementById('p-search')?.addEventListener('input', debounce(e=>{ filterQ=e.target.value; renderView(); }, 300));
   document.querySelectorAll('.spark').forEach(canvas=>{
     const p = DB.players.find(x=>x.id===canvas.dataset.id);
     if(p) requestAnimationFrame(()=>drawSpark(canvas, realAllScoresOf(p), catColor(p.cat)));
@@ -1725,7 +1788,7 @@ function buildStats() {
   const topRows = topScores.map((t,i)=>`
     <div class="top-row">
       <div class="top-pos">${i+1}</div>
-      <div style="flex:1"><div style="font-size:.82rem;font-weight:600">${t.name}</div><span class="badge ${CAT_CLS[t.cat]}">${t.cat}</span></div>
+      <div style="flex:1"><div style="font-size:.82rem;font-weight:600">${esc(t.name)}</div><span class="badge ${CAT_CLS[t.cat]}">${esc(t.cat)}</span></div>
       <div class="top-score">${t.s}</div>
     </div>`).join('');
 
@@ -1999,7 +2062,7 @@ function openDetail(playerId, filterTrnId) {
   if(filterTrnId && !trnsWithLines.some(t => t.id === filterTrnId)) filterTrnId = null;
   const trnChips = trnsWithLines.map(t => {
     const active = filterTrnId === t.id;
-    return `<button onclick="openDetail('${playerId}','${t.id}')" style="padding:4px 10px;border-radius:20px;font-size:.7rem;font-weight:600;border:1.5px solid ${active?col:'var(--border2)'};background:${active?col+'22':'transparent'};color:${active?col:'var(--muted)'};cursor:pointer;white-space:nowrap">${t.name}</button>`;
+    return `<button onclick="openDetail('${playerId}','${t.id}')" style="padding:4px 10px;border-radius:20px;font-size:.7rem;font-weight:600;border:1.5px solid ${active?col:'var(--border2)'};background:${active?col+'22':'transparent'};color:${active?col:'var(--muted)'};cursor:pointer;white-space:nowrap">${esc(t.name)}</button>`;
   }).join('');
   const allActive = !filterTrnId;
   const filterBar = trnsWithLines.length > 0 ? `
@@ -2135,13 +2198,14 @@ let adminMode = !!_serverPassword;
 function isAdmin() { return adminMode; }
 function isTournamentAdmin() {
   if(!adminMode) return false;
-  const t = (DB.tournaments||[]).find(x=>x.id===activeTournamentId);
+  const t = getTournament(activeTournamentId);
   return !t || t.status !== 'finalizado';
 }
 
 async function serverLogin() {
   const pw = document.getElementById('admin-pw-input')?.value;
   if(!pw) { document.getElementById('pin-error').textContent='Ingresá la contraseña'; return; }
+  showLoading();
   try {
     const res = await fetch('/api/login', {
       method: 'POST',
@@ -2163,12 +2227,14 @@ async function serverLogin() {
       renderView();
       toast('✓ Modo admin activado');
     } else {
-      document.getElementById('pin-error').textContent = '✖ Contraseña incorrecta';
+      document.getElementById('pin-error').textContent = json.error || '✖ Contraseña incorrecta';
       document.getElementById('admin-pw-input').value = '';
       document.getElementById('admin-pw-input').focus();
     }
   } catch(e) {
-    document.getElementById('pin-error').textContent = '⚠ Error de conexión';
+    document.getElementById('pin-error').textContent = '⚠ Error de conexión — verificá tu internet';
+  } finally {
+    hideLoading();
   }
 }
 
@@ -2209,6 +2275,7 @@ function openChangePassword() {
     if(!current||!newPw) { toast('Completá todos los campos','err'); return; }
     if(newPw.length < 4) { toast('Mínimo 4 caracteres','err'); return; }
     if(newPw !== confirm) { toast('Las contraseñas nuevas no coinciden','err'); return; }
+    showLoading();
     try {
       const res = await fetch('/api/change-password', {
         method: 'POST',
@@ -2226,7 +2293,7 @@ function openChangePassword() {
       }
     } catch(e) {
       toast('⚠ Error de conexión','err');
-    }
+    } finally { hideLoading(); }
   };
   openModal('modal-match-result');
 }
@@ -2281,7 +2348,8 @@ function buildTorneos() {
   }
   const cards = filtered.map(t => {
     const fmtLabel = {clasificacion:'Clasificación palos', zona:'Estilo Aniversario', eliminacion:'Eliminación directa','zona+elim':'Zonas + Eliminación','suma+bracket':'Pica-Pica','suma+zona':'Pica-Pica + Final','suma+repechaje+zona':'Pica-Pica con Repechaje'}[t.format] || t.format;
-    const modLabel = t.mode === 'equipo' ? '👥 Parejas' : t.mode === 'trio' ? '🎳 Tríos' : t.mode === 'sexteto' ? '6️⃣ Sexteto' : '👤 Individual';
+    const modeIcons = {equipo:'👥',trio:'🎳',sexteto:'6️⃣',individual:'👤',mixto:'🎯'};
+    const modLabel = (modeIcons[t.mode]||'') + ' ' + (MODE_LABELS[t.mode]||t.mode);
     const fmtClass = {zona:'zona', eliminacion:'elim','zona+elim':'zona'}[t.format] || '';
     const statusIcon = {activo:'🟢', finalizado:'🏁', pendiente:'⏳'}[t.status] || '⏳';
     const statusClass = {activo:'t-status-activo', finalizado:'t-status-finalizado', pendiente:'t-status-pendiente'}[t.status] || 't-status-pendiente';
@@ -2296,7 +2364,7 @@ function buildTorneos() {
       <div class="trn-card-accent" style="background:${TEAM_COLORS[0]}44"></div>
       <div style="padding-left:8px">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:2px">
-          <div class="trn-name" style="flex:1">${t.name}</div>
+          <div class="trn-name" style="flex:1">${esc(t.name)}</div>
           <span class="t-status-badge ${statusClass}">${statusIcon} ${statusLabel}</span>
           ${delBtn}
         </div>
@@ -2312,7 +2380,7 @@ function buildTorneos() {
 }
 
 function bindTorneos() {
-  document.getElementById('t-search')?.addEventListener('input', e => { torneoFilterQ = e.target.value; renderView(); });
+  document.getElementById('t-search')?.addEventListener('input', debounce(e => { torneoFilterQ = e.target.value; renderView(); }, 300));
   document.getElementById('trn-danger-toggle')?.addEventListener('click', ()=>{
     const zone = document.getElementById('trn-danger-zone');
     const btn = document.getElementById('trn-danger-toggle');
@@ -2322,7 +2390,7 @@ function bindTorneos() {
 }
 
 async function deleteTournament(tId) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!isAdmin()) return;
   const ok = await appConfirm(`¿Eliminar el torneo "${t.name}" y todos sus datos?`);
   if(!ok) return;
@@ -2343,14 +2411,14 @@ function buildPromedios() {
   promSelectedTrns.forEach(id => {
     if(!torneos.some(t => t.id === id)) promSelectedTrns.delete(id);
   });
-  const mLabel = m => m==='individual'?'Individual':m==='equipo'?'Parejas':m==='trio'?'Tríos':m==='sexteto'?'Sexteto':m==='mixto'?'Mixto':'—';
+  const mLabel = m => MODE_LABELS[m] || '—';
   const trnItems = torneos.length
     ? torneos.map(t => {
         const sel = promSelectedTrns.has(t.id);
         const date = t.date ? t.date.split('-').reverse().join('/') : '';
         return `<div class="prom-trn-item ${sel?'prom-sel':''}" data-id="${t.id}">
           <div class="prom-chk">${sel?'✓':''}</div>
-          <div style="flex:1;font-size:.82rem;font-weight:600">${t.name}</div>
+          <div style="flex:1;font-size:.82rem;font-weight:600">${esc(t.name)}</div>
           <span class="prom-tag">${mLabel(t.mode)}</span>
           ${date?`<span class="prom-tag">${date}</span>`:''}
         </div>`;
@@ -2551,7 +2619,7 @@ function promRenderTable() {
     const pct = (r.avg/maxAvg*100).toFixed(1);
     return `<tr style="cursor:pointer" onclick="openDetail('${r.id}')">
       <td><div class="prom-rank ${rc}">${rk}</div></td>
-      <td><div style="font-weight:700;font-size:.86rem">${r.name}</div><span class="badge ${CAT_CLS_P[r.cat]||''}" style="margin-top:3px;display:inline-block">${r.cat}</span></td>
+      <td><div style="font-weight:700;font-size:.86rem">${esc(r.name)}</div><span class="badge ${CAT_CLS_P[r.cat]||''}" style="margin-top:3px;display:inline-block">${r.cat}</span></td>
       <td><div class="prom-avg" style="color:${col}">${fmtAvg(r.avg)}</div><div class="prom-bar-wrap"><div class="prom-bar-fill" style="width:${pct}%;background:${col}"></div></div></td>
       <td style="text-align:center;vertical-align:middle">
         <div style="font-family:'Bebas Neue',cursive;font-size:1.3rem;color:var(--text);line-height:1">${r.lines}</div>
@@ -2621,10 +2689,10 @@ function bindPromedios() {
   });
 
   // Search
-  document.getElementById('prom-search')?.addEventListener('input', e => {
+  document.getElementById('prom-search')?.addEventListener('input', debounce(e => {
     promFilterQ = e.target.value;
     promRenderTable();
-  });
+  }, 300));
 
   // Sort headers
   document.querySelectorAll('[data-psort]').forEach(th => {
@@ -2920,14 +2988,14 @@ let activeTournamentTab = 'participantes';
 function openTournamentDetail(tId) {
   activeTournamentId = tId;
   activeTournamentTab = 'participantes';
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(t) t._zonasFaseActiva = -1; // always open on current phase
   renderTournamentDetail();
   openModal('modal-tournament-detail');
 }
 
 function renderTournamentDetail() {
-  const t = (DB.tournaments||[]).find(x=>x.id===activeTournamentId);
+  const t = getTournament(activeTournamentId);
   if(!t) return;
   // Migrate old individual tournaments to phase model
   if(t.mode==='individual' && !t.phases) {
@@ -3074,7 +3142,7 @@ function buildZoneSelectorInline(t, entryId) {
   if(!t.zones||!t.zones.length||t.format==='eliminacion') return '';
   const cur = getEntryZone(t, entryId);
   const opts = `<option value="">— Zona —</option>` +
-    t.zones.map(z => `<option value="${z.id}" ${cur&&cur.id===z.id?'selected':''}>${z.name}</option>`).join('');
+    t.zones.map(z => `<option value="${z.id}" ${cur&&cur.id===z.id?'selected':''}>${esc(z.name)}</option>`).join('');
   return `<select class="zone-sel input" data-entry="${entryId}" data-tid="${t.id}"
     style="background:var(--surface);border:1px solid var(--border2);color:var(--text);padding:3px 8px;border-radius:8px;font-size:.72rem;outline:none;cursor:pointer;min-width:80px">${opts}</select>`;
 }
@@ -3099,7 +3167,7 @@ function buildParticipantsTab(t) {
     const p = DB.players.find(x=>x.id===pid);
     if(!p) return '';
     const zoneSel = hasZones
-      ? (isTournamentAdmin() ? buildZoneSelectorInline(t, pid) : (() => { const z = getEntryZone(t,pid); return z ? `<span style="font-size:.68rem;color:var(--A);background:rgba(56,189,248,.1);border:1px solid rgba(56,189,248,.3);padding:2px 10px;border-radius:8px">${z.name}</span>` : '<span style="font-size:.68rem;color:var(--muted)">—</span>'; })())
+      ? (isTournamentAdmin() ? buildZoneSelectorInline(t, pid) : (() => { const z = getEntryZone(t,pid); return z ? `<span style="font-size:.68rem;color:var(--A);background:rgba(56,189,248,.1);border:1px solid rgba(56,189,248,.3);padding:2px 10px;border-radius:8px">${esc(z.name)}</span>` : '<span style="font-size:.68rem;color:var(--muted)">—</span>'; })())
       : '';
     const rmBtn = isTournamentAdmin() ? `<button class="btn btn-danger btn-sm" onclick="removeParticipant('${t.id}','${pid}')">✕</button>` : '';
     const hcap = getHcap(t, pid);
@@ -3114,7 +3182,7 @@ function buildParticipantsTab(t) {
     return `<div class="team-row" style="align-items:center;gap:10px">
       <span class="rank-num" style="min-width:20px">${i+1}</span>
       <div style="flex:1;min-width:0">
-        <div style="font-weight:600;font-size:.84rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.name}</div>
+        <div style="font-weight:600;font-size:.84rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.name)}</div>
         <span class="badge ${CAT_CLS[p.cat]}" style="font-size:.6rem">${p.cat}</span>
       </div>
       ${hasZones ? zoneSel : ''}
@@ -3131,7 +3199,7 @@ function buildTeamsTab(t) {
   const teams = t.teams || [];
   const hasZones = t.zones && t.zones.length && t.format !== 'eliminacion';
   const teamLabel    = t.mode==='trio' ? 'Trío' : t.mode==='sexteto' ? 'Sexteto' : 'Pareja';
-  const teamsLabel   = t.mode==='trio' ? 'tríos' : t.mode==='sexteto' ? 'sextetos' : 'parejas';
+  const teamsLabel   = teamModeLabel(t.mode);
   const addTeamBtn   = isTournamentAdmin() ? `<button class="btn btn-accent btn-sm" id="td-add-team">+ ${teamLabel}</button>` : '';
   const autoMenuItems = [];
   if(isTournamentAdmin()) autoMenuItems.push(`<div onclick="event.stopPropagation();this.parentElement.style.display='none';confirmAutoTeams('${t.id}')" style="padding:8px 12px;cursor:pointer;font-size:.76rem;white-space:nowrap;border-bottom:1px solid var(--border);transition:background .1s" onmouseover="this.style.background='var(--surface)'" onmouseout="this.style.background='transparent'">🎲 Auto-crear ${teamsLabel}</div>`);
@@ -3168,7 +3236,7 @@ function buildTeamsTab(t) {
               ${isTournamentAdmin() ? `<div style="display:flex;flex-direction:column;gap:0px;flex-shrink:0">${upBtn}${downBtn}</div>` : ''}
               <span class="badge ${CAT_CLS[p.cat]||''}" style="font-size:.52rem;padding:1px 5px">${p.cat}</span>
               ${hcBadge}
-              <span style="font-size:.76rem;font-weight:600;flex:1">${p.name}</span>
+              <span style="font-size:.76rem;font-weight:600;flex:1">${esc(p.name)}</span>
               ${isTournamentAdmin() ? `<button onclick="event.stopPropagation();openSubstitutePlayer('${t.id}','${team.id}','${p.id}')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.7rem;padding:0 2px;line-height:1" title="Sustituir">🔄</button><button onclick="event.stopPropagation();removeTeamMember('${t.id}','${team.id}','${p.id}')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.7rem;padding:0 2px;line-height:1" title="Quitar">✕</button>` : ''}
             </div>`;
           }).join('')}
@@ -3176,7 +3244,7 @@ function buildTeamsTab(t) {
       : `<div style="font-size:.72rem;color:var(--muted);margin-top:5px;font-style:italic">Sin integrantes — agregá jugadores</div>`;
 
     const zoneSel = hasZones
-      ? (isTournamentAdmin() ? buildZoneSelectorInline(t, team.id) : (() => { const z = getEntryZone(t, team.id); return z ? `<span style="font-size:.68rem;color:var(--A);background:rgba(56,189,248,.1);border:1px solid rgba(56,189,248,.3);padding:2px 10px;border-radius:8px">${z.name}</span>` : '<span style="font-size:.68rem;color:var(--muted)">—</span>'; })())
+      ? (isTournamentAdmin() ? buildZoneSelectorInline(t, team.id) : (() => { const z = getEntryZone(t, team.id); return z ? `<span style="font-size:.68rem;color:var(--A);background:rgba(56,189,248,.1);border:1px solid rgba(56,189,248,.3);padding:2px 10px;border-radius:8px">${esc(z.name)}</span>` : '<span style="font-size:.68rem;color:var(--muted)">—</span>'; })())
       : '';
     const addMemberBtn = isTournamentAdmin() ? `<button class="btn btn-ghost btn-sm" onclick="openAddTeamMember('${t.id}','${team.id}')" title="Agregar jugador">+ Jugador</button>` : '';
     const rmTeamBtn = isTournamentAdmin() ? `<button class="btn btn-danger btn-sm" onclick="removeTeam('${t.id}','${team.id}')">🗑</button>` : '';
@@ -3185,7 +3253,7 @@ function buildTeamsTab(t) {
       <div style="width:10px;height:10px;border-radius:50%;background:${col};flex-shrink:0;margin-top:5px"></div>
       <div style="flex:1;min-width:0">
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-          <span style="font-weight:700;font-size:.88rem">${team.name}</span>
+          <span style="font-weight:700;font-size:.88rem">${esc(team.name)}</span>
           ${countBadge}
           ${hasZones ? zoneSel : ''}
         </div>
@@ -3225,7 +3293,7 @@ function bindParticipantsTab(t) {
 }
 
 function openHcapByCategory(tId) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!isTournamentAdmin()) return;
   let allPids = [];
   if(t.mode === 'individual') {
@@ -3286,7 +3354,7 @@ function openHcapByCategory(tId) {
 }
 
 function openHcapByPlayer(tId) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!isTournamentAdmin()) return;
   const allPlayers = [];
   (t.teams||[]).forEach(team => {
@@ -3299,8 +3367,8 @@ function openHcapByPlayer(tId) {
 
   const rows = allPlayers.map(p => `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
     <span class="badge ${CAT_CLS[p.cat]||''}" style="font-size:.5rem;padding:1px 5px;min-width:32px;text-align:center">${p.cat}</span>
-    <span style="flex:1;font-size:.78rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.name}</span>
-    <span style="font-size:.6rem;color:var(--muted);flex-shrink:0">${p.team}</span>
+    <span style="flex:1;font-size:.78rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.name)}</span>
+    <span style="font-size:.6rem;color:var(--muted);flex-shrink:0">${esc(p.team)}</span>
     <div style="display:flex;align-items:center;gap:3px;flex-shrink:0">
       <span style="font-size:.58rem;color:var(--muted)">HCP+</span>
       <input type="number" class="input hcap-player-input" data-pid="${p.pid}" value="${p.hcap||''}"
@@ -3331,7 +3399,7 @@ function openHcapByPlayer(tId) {
 }
 
 function addAllParticipants(tId) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!isTournamentAdmin()) return;
   const enrolledSet = new Set(t.participants||[]);
   const toAdd = DB.players.filter(p => (t.cat==='TODOS'||p.cat===t.cat) && !enrolledSet.has(p.id));
@@ -3355,7 +3423,7 @@ function bindTeamsTab(t) {
   // Zone selectors live change
   document.querySelectorAll('.zone-sel').forEach(sel => {
     sel.addEventListener('change', () => {
-      const tt = (DB.tournaments||[]).find(x=>x.id===sel.dataset.tid);
+      const tt = getTournament(sel.dataset.tid);
       if(!tt) return;
       assignEntryToZone(tt, sel.dataset.entry, sel.value);
       save(); renderTournamentDetail(); toast('✓ Zona asignada');
@@ -3366,7 +3434,7 @@ function bindTeamsTab(t) {
 function getPlayerZone(t, pid) { return getEntryZone(t, pid); }
 
 function removeParticipant(tId, pid) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t) return;
   t.participants = (t.participants||[]).filter(x=>x!==pid);
   t.zones?.forEach(z => { z.entries = (z.entries||[]).filter(e=>e.id!==pid); });
@@ -3374,7 +3442,7 @@ function removeParticipant(tId, pid) {
 }
 
 function openAutoCreateTeams(tId) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!isTournamentAdmin()) return;
   const teamSize = t.teamSize || 3;
   const cat = t.cat || 'TODOS';
@@ -3394,12 +3462,12 @@ function openAutoCreateTeams(tId) {
   const TEAM_NAMES = ['Águilas','Tigres','Leones','Pumas','Lobos','Toros','Halcones','Panteras','Dragones','Cóndores','Piratas','Vikingos'];
 
   document.getElementById('mr-body').innerHTML = `
-    <div style="font-weight:700;font-size:.86rem;margin-bottom:4px">Auto-crear ${t.mode==='trio'?'tríos':t.mode==='sexteto'?'sextetos':'parejas'}</div>
+    <div style="font-weight:700;font-size:.86rem;margin-bottom:4px">Auto-crear ${teamModeLabel(t.mode)}</div>
     <div style="font-size:.7rem;color:var(--muted);margin-bottom:14px">
-      ${available.length} jugadores disponibles · tamaño: ${teamSize} · máximo ${maxTeams} ${t.mode==='trio'?'tríos':t.mode==='sexteto'?'sextetos':'parejas'}
+      ${available.length} jugadores disponibles · tamaño: ${teamSize} · máximo ${maxTeams} ${teamModeLabel(t.mode)}
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
-      <div class="field"><label class="label">Cantidad de ${t.mode==='trio'?'tríos':t.mode==='sexteto'?'sextetos':'parejas'}</label>
+      <div class="field"><label class="label">Cantidad de ${teamModeLabel(t.mode)}</label>
         <input class="input" id="act-count" type="number" min="2" max="${maxTeams}" value="${Math.min(maxTeams,4)}"
           style="text-align:center;font-family:'Bebas Neue',cursive;font-size:1.8rem"
           oninput="actUpdatePreview(${available.length},${teamSize})"></div>
@@ -3409,10 +3477,10 @@ function openAutoCreateTeams(tId) {
           oninput="actUpdatePreview(${available.length},${teamSize})"></div>
     </div>
     <div style="font-size:.7rem;color:var(--muted)" id="act-preview">
-      Se crearán <strong id="act-total">—</strong> ${t.mode==='trio'?'tríos':t.mode==='sexteto'?'sextetos':'parejas'} con <strong>${teamSize}</strong> jugadores c/u
+      Se crearán <strong id="act-total">—</strong> ${teamModeLabel(t.mode)} con <strong>${teamSize}</strong> jugadores c/u
     </div>
     <div style="font-size:.68rem;color:#f87171;margin-top:6px">
-      ⚠️ Se agrega a los ${t.mode==='trio'?'tríos':t.mode==='sexteto'?'sextetos':'parejas'} ya existentes. Los jugadores ya asignados no se tocan.
+      ⚠️ Se agrega a los ${teamModeLabel(t.mode)} ya existentes. Los jugadores ya asignados no se tocan.
     </div>`;
 
   document.getElementById('mr-submit').textContent = t.mode==='trio' ? 'Crear tríos' : t.mode==='sexteto' ? 'Crear sextetos' : 'Crear parejas';
@@ -3445,9 +3513,9 @@ function actUpdatePreview(total, maxSize) {
 }
 
 async function confirmAutoTeams(tId) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t) return;
-  const label = t.mode==='trio'?'tríos':t.mode==='sexteto'?'sextetos':'parejas';
+  const label = teamModeLabel(t.mode);
   const ok = await appConfirm(`¿Auto-crear ${label}? Esto puede reorganizar los equipos actuales.`);
   if(!ok) return;
   openAutoCreateTeams(tId);
@@ -3460,7 +3528,7 @@ async function confirmAutoZones(tId) {
 }
 
 function autoAssignZones(tId) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!t.zones) return;
   snapshotTournament(tId);
   const entries = (t.mode==='equipo'||t.mode==='trio'||t.mode==='sexteto') ? (t.teams||[]).map(x=>x.id) : (t.participants||[]);
@@ -3478,7 +3546,7 @@ function autoAssignZones(tId) {
 let addParticipantTargetId = null;
 function openAddParticipant(tId) {
   addParticipantTargetId = tId;
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t) return;
   const enrolled = new Set(t.participants||[]);
   const available = DB.players.filter(p => (t.cat==='TODOS'||p.cat===t.cat) && !enrolled.has(p.id));
@@ -3488,7 +3556,7 @@ function openAddParticipant(tId) {
     const filtered = q ? available.filter(p => p.name.toLowerCase().includes(q.toLowerCase())) : available;
     return filtered.map(p => `<div class="ap-item" data-pid="${p.id}" onclick="apSelectPlayer('${p.id}')" style="display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--border);transition:background .1s" onmouseover="this.style.background='var(--surface)'" onmouseout="this.style.background='transparent'">
       <span class="badge ${CAT_CLS[p.cat]||''}" style="font-size:.5rem;padding:1px 5px">${p.cat}</span>
-      <span style="font-size:.82rem;font-weight:600">${p.name}</span>
+      <span style="font-size:.82rem;font-weight:600">${esc(p.name)}</span>
     </div>`).join('') || '<div style="padding:12px;text-align:center;color:var(--muted);font-size:.76rem">No se encontraron jugadores</div>';
   }
 
@@ -3520,7 +3588,7 @@ function openAddParticipant(tId) {
 
 // ── ADD TEAM ──────────────────────────────────────────────────────────
 function openAddTeam(tId) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t) return;
   const label = t.mode==='trio'?'trío':t.mode==='sexteto'?'sexteto':'pareja';
   const size = t.teamSize || (t.mode==='trio'?3:t.mode==='sexteto'?6:2);
@@ -3537,7 +3605,7 @@ function openAddTeam(tId) {
       return `<div onclick="atTogglePlayer('${p.id}')" style="display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--border);background:${sel?'rgba(59,130,246,.08)':'transparent'};border-left:3px solid ${sel?'var(--accent)':'transparent'};transition:all .1s">
         <span style="width:18px;height:18px;border-radius:4px;border:1.5px solid ${sel?'var(--accent)':'var(--border2)'};background:${sel?'var(--accent)':'transparent'};display:flex;align-items:center;justify-content:center;font-size:.7rem;color:#fff;flex-shrink:0">${sel?'✓':''}</span>
         <span class="badge ${CAT_CLS[p.cat]||''}" style="font-size:.5rem;padding:1px 5px">${p.cat}</span>
-        <span style="font-size:.82rem;font-weight:${sel?700:400}">${p.name}</span>
+        <span style="font-size:.82rem;font-weight:${sel?700:400}">${esc(p.name)}</span>
       </div>`;
     }).join('') || '<div style="padding:12px;text-align:center;color:var(--muted);font-size:.76rem">No se encontraron jugadores</div>';
   }
@@ -3582,7 +3650,7 @@ function openAddTeam(tId) {
 }
 
 function openAddTeamMember(tId, teamId) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t) return;
   const team = (t.teams||[]).find(x=>x.id===teamId);
   if(!team) return;
@@ -3595,12 +3663,12 @@ function openAddTeamMember(tId, teamId) {
     const filtered = q ? available.filter(p => p.name.toLowerCase().includes(q.toLowerCase())) : available;
     return filtered.map(p => `<div onclick="atmSelectPlayer('${tId}','${teamId}','${p.id}')" style="display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--border);transition:background .1s" onmouseover="this.style.background='var(--surface)'" onmouseout="this.style.background='transparent'">
       <span class="badge ${CAT_CLS[p.cat]||''}" style="font-size:.5rem;padding:1px 5px">${p.cat}</span>
-      <span style="font-size:.82rem;font-weight:600">${p.name}</span>
+      <span style="font-size:.82rem;font-weight:600">${esc(p.name)}</span>
     </div>`).join('') || '<div style="padding:12px;text-align:center;color:var(--muted);font-size:.76rem">No se encontraron jugadores</div>';
   }
 
   document.getElementById('mr-body').innerHTML = `
-    <div class="field"><label class="label">Buscar jugador para ${team.name}</label>
+    <div class="field"><label class="label">Buscar jugador para ${esc(team.name)}</label>
       <input class="input" id="atm-search" type="text" placeholder="Escribí el nombre..." autocomplete="off" oninput="atmFilterList()" style="margin-bottom:8px">
     </div>
     <div id="atm-list" style="max-height:45vh;overflow-y:auto;border:1px solid var(--border);border-radius:8px">${buildList('')}</div>`;
@@ -3610,7 +3678,7 @@ function openAddTeamMember(tId, teamId) {
     document.getElementById('atm-list').innerHTML = buildList(q);
   };
   window.atmSelectPlayer = (tid, tmid, pid) => {
-    const tt = (DB.tournaments||[]).find(x=>x.id===tid);
+    const tt = getTournament(tid);
     const tm = (tt?.teams||[]).find(x=>x.id===tmid);
     if(!tm) return;
     tm.members = tm.members||[];
@@ -3625,14 +3693,14 @@ function openAddTeamMember(tId, teamId) {
 }
 
 function removeTeam(tId, teamId) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t) return;
   t.teams = (t.teams||[]).filter(x=>x.id!==teamId);
   save(); renderTournamentDetail(); toast(t.mode==='trio'?'Trío eliminado':t.mode==='sexteto'?'Sexteto eliminado':'Pareja eliminada');
 }
 
 async function removeTeamMember(tId, teamId, pid) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   const team = (t?.teams||[]).find(x=>x.id===teamId);
   if(!team) return;
   let msg = '¿Quitar este jugador del equipo?';
@@ -3648,7 +3716,7 @@ async function removeTeamMember(tId, teamId, pid) {
 }
 
 function swapTeamMember(tId, teamId, fromIdx, toIdx) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   const team = (t?.teams||[]).find(x=>x.id===teamId);
   if(!team || !team.members) return;
   if(fromIdx < 0 || toIdx < 0 || fromIdx >= team.members.length || toIdx >= team.members.length) return;
@@ -3659,7 +3727,7 @@ function swapTeamMember(tId, teamId, fromIdx, toIdx) {
 }
 
 function openSubstitutePlayer(tId, teamId, oldPid) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   const team = (t?.teams||[]).find(x=>x.id===teamId);
   if(!t || !team) return;
   const oldPlayer = DB.players.find(x=>x.id===oldPid);
@@ -3671,12 +3739,12 @@ function openSubstitutePlayer(tId, teamId, oldPid) {
     const filtered = q ? available.filter(p => p.name.toLowerCase().includes(q.toLowerCase())) : available;
     return filtered.map(p => `<div onclick="confirmSubstitute('${tId}','${teamId}','${oldPid}','${p.id}')" style="display:flex;align-items:center;gap:8px;padding:10px;cursor:pointer;border-bottom:1px solid var(--border);transition:background .1s" onmouseover="this.style.background='rgba(59,130,246,.08)'" onmouseout="this.style.background='transparent'">
       <span class="badge ${CAT_CLS[p.cat]||''}" style="font-size:.5rem;padding:1px 5px">${p.cat}</span>
-      <span style="font-size:.82rem;font-weight:500">${p.name}</span>
+      <span style="font-size:.82rem;font-weight:500">${esc(p.name)}</span>
     </div>`).join('') || '<div style="padding:12px;text-align:center;color:var(--muted);font-size:.76rem">No se encontraron jugadores</div>';
   }
 
   document.getElementById('mr-body').innerHTML = `
-    <div style="font-size:.82rem;font-weight:700;margin-bottom:4px">Sustituir a ${oldPlayer?.name||'?'}</div>
+    <div style="font-size:.82rem;font-weight:700;margin-bottom:4px">Sustituir a ${esc(oldPlayer?.name||'?')}</div>
     <div style="font-size:.72rem;color:var(--muted);margin-bottom:10px">Las líneas ya jugadas no se borran</div>
     <div class="field" style="margin-bottom:6px">
       <input class="input" id="sub-search" type="text" placeholder="Buscar suplente..." autocomplete="off" oninput="document.getElementById('sub-list').innerHTML=document.getElementById('sub-search')._buildList(this.value)" style="margin-bottom:0">
@@ -3689,7 +3757,7 @@ function openSubstitutePlayer(tId, teamId, oldPid) {
 }
 
 async function confirmSubstitute(tId, teamId, oldPid, newPid) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   const team = (t?.teams||[]).find(x=>x.id===teamId);
   if(!t || !team) return;
   const oldP = DB.players.find(x=>x.id===oldPid);
@@ -3797,12 +3865,12 @@ function buildArrastreView(t) {
   const rows = ranked.map((r, i) => {
     const posClass = i===0?'rr-pos-gold':i===1?'rr-pos-silver':i===2?'rr-pos-bronze':'';
     const phaseChips = r.perPhase.filter(p=>p.palos>0).map(p =>
-      `<span style="font-size:.58rem;background:var(--card);border:1px solid var(--border);padding:1px 6px;border-radius:4px;color:var(--muted)">${p.name}: <strong style="color:var(--text)">${p.palos}</strong></span>`
+      `<span style="font-size:.58rem;background:var(--card);border:1px solid var(--border);padding:1px 6px;border-radius:4px;color:var(--muted)">${esc(p.name)}: <strong style="color:var(--text)">${p.palos}</strong></span>`
     ).join('');
     return `<div class="team-row" style="align-items:center;gap:10px">
       <span class="${posClass}" style="font-family:'Bebas Neue',cursive;font-size:1rem;min-width:26px;text-align:right;color:${!posClass?'var(--muted)':''}">${i+1}</span>
       <div style="flex:1;min-width:0">
-        <div style="font-weight:600;font-size:.84rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.name}</div>
+        <div style="font-weight:600;font-size:.84rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.name)}</div>
         <span class="badge ${CAT_CLS[r.cat]||''}" style="font-size:.55rem">${r.cat}</span>
         <div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:3px">${phaseChips}</div>
       </div>
@@ -4084,7 +4152,7 @@ function buildSingleFase(t, ph, phIdx) {
       return `<div class="team-row ${extraClass}" ${dataAttrs} style="align-items:center;gap:10px;${q?'':'opacity:.5'}${clickable?';cursor:pointer':''}">
         <span class="${pc}" style="font-family:'Bebas Neue',cursive;font-size:1rem;min-width:26px;text-align:right;color:${!pc?'var(--muted)':''}">${pos}</span>
         <div style="flex:1;min-width:0">
-          <div style="font-weight:600;font-size:.84rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e.name}</div>
+          <div style="font-weight:600;font-size:.84rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(e.name)}</div>
           <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">
             <span class="badge ${CAT_CLS[e.cat]||''}" style="font-size:.58rem">${e.cat}</span>
             ${hcapBadge}
@@ -4248,21 +4316,21 @@ function bindFasesTab(t) {
 }
 
 function switchPhase(tId, phIdx) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t) return;
   t.activePhase = phIdx;
   renderTournamentDetail();
 }
 
 function lockFase(tId, phIdx) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t) return;
   t.phases[phIdx].locked = true;
   save(); renderTournamentDetail(); toast('🔒 Fase cerrada');
 }
 
 async function resetFase(tId, phIdx) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!isTournamentAdmin()) return;
   const ph = (t.phases||[])[phIdx];
   if(!ph) return;
@@ -4275,7 +4343,7 @@ async function resetFase(tId, phIdx) {
 }
 
 async function deleteFase(tId, phIdx) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!isTournamentAdmin()) return;
   const ph = (t.phases||[])[phIdx];
   if(!ph) return;
@@ -4289,7 +4357,7 @@ async function deleteFase(tId, phIdx) {
 }
 
 function addFaseFromPrev(tId, phIdx) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t) return;
   const isArrastre = t.indTipo === 'arrastre';
   const prevPh  = t.phases[phIdx];
@@ -4347,7 +4415,7 @@ function getArrastreRanking(t) {
 }
 
 function openAddFaseArrastre(tId, phIdx) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!isTournamentAdmin()) return;
 
   const ranked = getArrastreRanking(t);
@@ -4360,7 +4428,7 @@ function openAddFaseArrastre(tId, phIdx) {
     const el = document.getElementById('nfa-preview');
     if(!el) return;
     el.innerHTML = show.map((r,i) =>
-      `<div style="display:flex;gap:6px;padding:2px 0;${i===n-1?'border-bottom:2px dashed rgba(59,130,246,.4);padding-bottom:4px;margin-bottom:2px':''}"><span style="min-width:20px;color:var(--muted)">${i+1}.</span><span style="flex:1">${r.name}</span><span style="color:var(--accent);font-family:'Bebas Neue',cursive">${r.totalPalos}</span></div>`
+      `<div style="display:flex;gap:6px;padding:2px 0;${i===n-1?'border-bottom:2px dashed rgba(59,130,246,.4);padding-bottom:4px;margin-bottom:2px':''}"><span style="min-width:20px;color:var(--muted)">${i+1}.</span><span style="flex:1">${esc(r.name)}</span><span style="color:var(--accent);font-family:'Bebas Neue',cursive">${r.totalPalos}</span></div>`
     ).join('') + (n < ranked.length ? `<div style="color:#f87171;padding-top:4px;font-size:.62rem">— ${ranked.length - n} eliminados —</div>` : '');
   };
 
@@ -4406,7 +4474,7 @@ function openAddFaseArrastre(tId, phIdx) {
 }
 
 function openAddFase(tId) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t) return;
   const isArrastre = t.indTipo === 'arrastre';
 
@@ -4464,7 +4532,7 @@ function openAddFase(tId) {
 }
 
 function openZonaFinalFromFaseManual(tId, rankedPids) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!isTournamentAdmin()) return;
 
   const total = rankedPids.length;
@@ -4505,7 +4573,7 @@ function openZonaFinalFromFaseManual(tId, rankedPids) {
 }
 
 function pickBestMatch(tId, phIdx, mi) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!isTournamentAdmin()) return;
   const ph = (t.phases||[])[phIdx];
   if(!ph) return;
@@ -4546,7 +4614,7 @@ function pickBestMatch(tId, phIdx, mi) {
 }
 
 function pickBestLine(tId, phIdx, mi) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!isTournamentAdmin()) return;
   const ph = (t.phases||[])[phIdx];
   if(!ph) return;
@@ -4583,7 +4651,7 @@ function pickBestLine(tId, phIdx, mi) {
 }
 
 function setManualBest(tId, phIdx, key, pid) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t) return;
   const ph = (t.phases||[])[phIdx];
   if(!ph) return;
@@ -4595,7 +4663,7 @@ function setManualBest(tId, phIdx, key, pid) {
 }
 
 function pickRankingTie(tId, phIdx, pidA, pidB) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!isTournamentAdmin()) return;
   const ph = (t.phases||[])[phIdx];
   if(!ph) return;
@@ -4609,10 +4677,10 @@ function pickRankingTie(tId, phIdx, pidA, pidB) {
     <div style="font-size:.82rem;font-weight:700;margin-bottom:6px">⚡ Desempate en el ranking</div>
     <div style="font-size:.7rem;color:var(--muted);margin-bottom:12px">Ambos tienen ${palos} palos. ¿Quién queda arriba?</div>
     <button class="btn btn-ghost btn-sm" style="width:100%;justify-content:space-between;margin-bottom:6px" onclick="setRankingTie('${tId}',${phIdx},'${pidA}','${pidB}','${pidA}')">
-      <span style="font-weight:600">${nameA}</span><span style="color:#86efac">▲ Arriba</span>
+      <span style="font-weight:600">${esc(nameA)}</span><span style="color:#86efac">▲ Arriba</span>
     </button>
     <button class="btn btn-ghost btn-sm" style="width:100%;justify-content:space-between;margin-bottom:6px" onclick="setRankingTie('${tId}',${phIdx},'${pidA}','${pidB}','${pidB}')">
-      <span style="font-weight:600">${nameB}</span><span style="color:#86efac">▲ Arriba</span>
+      <span style="font-weight:600">${esc(nameB)}</span><span style="color:#86efac">▲ Arriba</span>
     </button>`;
   document.getElementById('mr-submit').textContent = 'Cancelar';
   document.getElementById('mr-submit').onclick = () => closeModal('modal-match-result');
@@ -4620,7 +4688,7 @@ function pickRankingTie(tId, phIdx, pidA, pidB) {
 }
 
 function setRankingTie(tId, phIdx, pidA, pidB, winner) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t) return;
   const ph = (t.phases||[])[phIdx];
   if(!ph) return;
@@ -4633,7 +4701,7 @@ function setRankingTie(tId, phIdx, pidA, pidB, winner) {
 }
 
 function pickZoneTie(tId, zoneId, idA, idB) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!isTournamentAdmin()) return;
   const getName = id => (t.teams||[]).find(x=>x.id===id)?.name || DB.players.find(x=>x.id===id)?.name || '?';
 
@@ -4652,7 +4720,7 @@ function pickZoneTie(tId, zoneId, idA, idB) {
 }
 
 function setZoneTie(tId, zoneId, idA, idB, winner) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t) return;
   if(!t.zoneTiebreakers) t.zoneTiebreakers = {};
   const key = idA < idB ? `${idA}_${idB}` : `${idB}_${idA}`;
@@ -4662,7 +4730,7 @@ function setZoneTie(tId, zoneId, idA, idB, winner) {
 }
 
 function openEditClasificados(tId, phIdx) {
-  const t  = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   const ph = t?.phases?.[phIdx];
   if(!ph) return;
   document.getElementById('mr-body').innerHTML = `
@@ -4683,7 +4751,7 @@ function openEditClasificados(tId, phIdx) {
 
 function openEditFaseScore(tId, phIdx, pid) {
   if(!isTournamentAdmin()) return;
-  const t  = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   const ph = t?.phases?.[phIdx];
   if(!ph) return;
   const p    = DB.players.find(x=>x.id===pid);
@@ -4798,7 +4866,7 @@ function openEditFaseScore(tId, phIdx, pid) {
 }
 
 function openEditFaseLineas(tId) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!isTournamentAdmin()) return;
   document.getElementById('mr-body').innerHTML = `
     <div style="font-size:.76rem;color:var(--muted);margin-bottom:12px">¿Cuántas líneas juega cada jugador?</div>
@@ -4817,7 +4885,7 @@ function openEditFaseLineas(tId) {
 }
 
 function openViewFaseScore(tId, phIdx, pid) {
-  const t  = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   const ph = t?.phases?.[phIdx];
   if(!ph) return;
   const p    = DB.players.find(x=>x.id===pid);
@@ -4919,8 +4987,8 @@ function buildMixtoEquiposTab(t) {
     return `<div class="team-row" style="align-items:flex-start;gap:10px;cursor:pointer" onclick="openMixtoEquipo('${t.id}','${eq.id}')">
       <span class="${posClass}" style="font-family:'Bebas Neue',cursive;font-size:1rem;min-width:22px;text-align:right;padding-top:2px">${i+1}</span>
       <div style="flex:1;min-width:0">
-        <div style="font-weight:700;font-size:.88rem">${eq.name}</div>
-        <div style="font-size:.7rem;color:var(--muted);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${memberNames}</div>
+        <div style="font-weight:700;font-size:.88rem">${esc(eq.name)}</div>
+        <div style="font-size:.7rem;color:var(--muted);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(memberNames)}</div>
         <div class="team-pts-bar" style="margin-top:5px"><div class="team-pts-fill" style="width:${pct}%"></div></div>
       </div>
       <div style="text-align:right;flex-shrink:0">
@@ -4948,7 +5016,7 @@ function bindMixtoEquiposTab(t) {
 }
 
 function openAddMixtoEquipo(tId) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t) return;
   document.getElementById('mr-body').innerHTML = `
     <div class="field"><label class="label">Nombre del equipo</label>
@@ -4972,7 +5040,7 @@ function openAddMixtoEquipo(tId) {
 }
 
 function removeMixtoEquipo(tId, eqId) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t) return;
   t.equipos = (t.equipos||[]).filter(e=>e.id!==eqId);
   (t.modalidades||[]).forEach(mod => { mod.equipos=(mod.equipos||[]).filter(sg=>sg.equipoId!==eqId); });
@@ -4981,7 +5049,7 @@ function removeMixtoEquipo(tId, eqId) {
 
 function openMixtoEquipo(tId, eqId) {
   // Open a modal to manage team members
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   const eq = (t?.equipos||[]).find(e=>e.id===eqId);
   if(!t||!eq) return;
 
@@ -4991,16 +5059,16 @@ function openMixtoEquipo(tId, eqId) {
   const memberRows = (eq.members||[]).map(pid => {
     const p = DB.players.find(x=>x.id===pid);
     return `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)">
-      <span style="flex:1;font-size:.84rem">${p?p.name:pid}</span>
+      <span style="flex:1;font-size:.84rem">${p?esc(p.name):esc(pid)}</span>
       ${isTournamentAdmin()?`<button class="btn btn-danger btn-sm" onclick="mixtoRemoveMember('${tId}','${eqId}','${pid}')">✕</button>`:''}
     </div>`;
   }).join('') || `<div style="font-size:.76rem;color:var(--muted);padding:6px 0">Sin jugadores aún</div>`;
 
   const addPlayerOpts = available.filter(p=>!(eq.members||[]).includes(p.id))
-    .map(p=>`<option value="${p.id}">${p.name} (${p.cat})</option>`).join('');
+    .map(p=>`<option value="${p.id}">${esc(p.name)} (${p.cat})</option>`).join('');
 
   document.getElementById('mr-body').innerHTML = `
-    <div style="font-size:.9rem;font-weight:700;margin-bottom:14px">${eq.name}</div>
+    <div style="font-size:.9rem;font-weight:700;margin-bottom:14px">${esc(eq.name)}</div>
     <div style="margin-bottom:12px">${memberRows}</div>
     ${isTournamentAdmin() && addPlayerOpts ? `
     <div style="display:flex;gap:8px;align-items:flex-end">
@@ -5026,7 +5094,7 @@ function openMixtoEquipo(tId, eqId) {
 }
 
 function mixtoRemoveMember(tId, eqId, pid) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   const eq = (t?.equipos||[]).find(e=>e.id===eqId);
   if(!eq) return;
   eq.members = (eq.members||[]).filter(x=>x!==pid);
@@ -5043,18 +5111,18 @@ function buildMixtoSubgroupAssign(t, eq) {
     const sg = (mod.equipos||[]).find(s=>s.equipoId===eq.id);
     if(!sg) return '';
     const memberNames = (sg.members||[]).map(pid=>{ const p=DB.players.find(x=>x.id===pid); return p?p.name.split(' ')[0]:pid; }).join(', ') || '—';
-    const opts = (eq.members||[]).map(pid=>{ const p=DB.players.find(x=>x.id===pid); return `<option value="${pid}" ${(sg.members||[]).includes(pid)?'selected':''}>${p?p.name:pid}</option>`; }).join('');
+    const opts = (eq.members||[]).map(pid=>{ const p=DB.players.find(x=>x.id===pid); return `<option value="${pid}" ${(sg.members||[]).includes(pid)?'selected':''}>${p?esc(p.name):esc(pid)}</option>`; }).join('');
     const groupLabel = mod.groupSize===6?'Todos (6)':mod.groupSize===3?'Trío':mod.groupSize===2?'Pareja':'Individual';
-    if(!isTournamentAdmin()) return `<div style="font-size:.76rem;margin-bottom:5px"><strong>${mod.name}:</strong> ${memberNames}</div>`;
+    if(!isTournamentAdmin()) return `<div style="font-size:.76rem;margin-bottom:5px"><strong>${esc(mod.name)}:</strong> ${esc(memberNames)}</div>`;
     return `<div style="margin-bottom:8px">
-      <div style="font-size:.72rem;font-weight:600;margin-bottom:4px">${mod.name} <span style="color:var(--muted);font-weight:400">(${groupLabel})</span></div>
+      <div style="font-size:.72rem;font-weight:600;margin-bottom:4px">${esc(mod.name)} <span style="color:var(--muted);font-weight:400">(${groupLabel})</span></div>
       <select class="input" multiple id="sg-sel-${sg.subgrupoId}" style="height:${Math.min(5,(eq.members||[]).length+1)*28}px;font-size:.78rem" onchange="mixtoUpdateSubgroup('${t.id}','${mod.id}','${sg.subgrupoId}',this)">${opts}</select>
     </div>`;
   }).join('');
 }
 
 function mixtoUpdateSubgroup(tId, modId, sgId, sel) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   const mod = (t?.modalidades||[]).find(m=>m.id===modId);
   const sg = (mod?.equipos||[]).find(s=>s.subgrupoId===sgId);
   if(!sg) return;
@@ -5154,7 +5222,7 @@ function bindModRR(t, mod) {
 }
 
 function openModRRMatch(tId, modId) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   const mod = (t?.modalidades||[]).find(m=>m.id===modId);
   if(!mod) return;
   const sgs = mod.equipos||[];
@@ -5254,7 +5322,7 @@ function bindModClasifFinal(t, mod) {
 }
 
 function openModScore(tId, modId) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   const mod = (t?.modalidades||[]).find(m=>m.id===modId);
   if(!mod) return;
   const sgs = mod.equipos||[];
@@ -5283,7 +5351,7 @@ function openModScore(tId, modId) {
 }
 
 function openEditFinCount(tId, modId) {
-  const t=(DB.tournaments||[]).find(x=>x.id===tId);
+  const t=getTournament(tId);
   const mod=(t?.modalidades||[]).find(m=>m.id===modId);
   if(!mod) return;
   document.getElementById('mr-body').innerHTML=`
@@ -5301,7 +5369,7 @@ function openEditFinCount(tId, modId) {
 }
 
 function openStartFinal(tId, modId) {
-  const t=(DB.tournaments||[]).find(x=>x.id===tId);
+  const t=getTournament(tId);
   const mod=(t?.modalidades||[]).find(m=>m.id===modId);
   if(!mod) return;
   const clasif=mod.clasificacion||{};
@@ -5313,7 +5381,7 @@ function openStartFinal(tId, modId) {
 }
 
 function openSaveFinalResult(tId, modId) {
-  const t=(DB.tournaments||[]).find(x=>x.id===tId);
+  const t=getTournament(tId);
   const mod=(t?.modalidades||[]).find(m=>m.id===modId);
   const final=mod?.final;
   if(!final) return;
@@ -5364,8 +5432,8 @@ function buildModZonasFinal(t, mod) {
       return `<div class="team-row" style="align-items:center;gap:8px;${classif?'':'opacity:.5'}">
         <span class="${pc}" style="font-family:'Bebas Neue',cursive;min-width:20px;text-align:right">${i+1}</span>
         <div style="flex:1;min-width:0">
-          <span style="font-weight:600;font-size:.82rem">${name}</span>
-          ${memberNames ? `<div style="font-size:.64rem;color:var(--muted)">${memberNames}</div>` : ''}
+          <span style="font-weight:600;font-size:.82rem">${esc(name)}</span>
+          ${memberNames ? `<div style="font-size:.64rem;color:var(--muted)">${esc(memberNames)}</div>` : ''}
         </div>
         <span style="font-size:.72rem;color:var(--muted)">${s.pj}PJ ${s.pg}G</span>
         <span style="font-family:'Bebas Neue',cursive;font-size:1.05rem;color:var(--accent)">${s.pts}</span>
@@ -5392,7 +5460,7 @@ function buildModZonasFinal(t, mod) {
       </div>`;
     })();
     return `<div style="margin-bottom:14px">
-      <div style="font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px;display:flex;align-items:center;gap:8px">${z.name} ${addBtn}</div>
+      <div style="font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px;display:flex;align-items:center;gap:8px">${esc(z.name)} ${addBtn}</div>
       <div class="table-wrap" style="border-radius:10px">${rows}</div>
       ${mixtoMatchHistory}
     </div>`;
@@ -5456,7 +5524,7 @@ function getZonasFinalists(t, mod) {
 }
 
 function openSetupMixtoZonas(tId, modId) {
-  const t=(DB.tournaments||[]).find(x=>x.id===tId);
+  const t=getTournament(tId);
   const mod=(t?.modalidades||[]).find(m=>m.id===modId);
   if(!mod) return;
   const sgs=mod.equipos||[];
@@ -5478,11 +5546,11 @@ function openSetupMixtoZonas(tId, modId) {
 }
 
 function openMixtoZoneAssign(tId, modId) {
-  const t=(DB.tournaments||[]).find(x=>x.id===tId);
+  const t=getTournament(tId);
   const mod=(t?.modalidades||[]).find(m=>m.id===modId);
   if(!mod) return;
   const sgs=mod.equipos||[];
-  const zonaOpts=['<option value="">— Sin zona —</option>',...(mod.zonas||[]).map(z=>`<option value="${z.id}">${z.name}</option>`)].join('');
+  const zonaOpts=['<option value="">— Sin zona —</option>',...(mod.zonas||[]).map(z=>`<option value="${z.id}">${esc(z.name)}</option>`)].join('');
   const rows=sgs.map(sg=>{
     const curZone=(mod.zonas||[]).find(z=>(z.entries||[]).includes(sg.subgrupoId));
     const opts=zonaOpts.replace(`value="${curZone?.id||''}"`,`value="${curZone?.id||''}" selected`);
@@ -5506,7 +5574,7 @@ function openMixtoZoneAssign(tId, modId) {
 }
 
 function openEditMixtoClasif(tId, modId) {
-  const t=(DB.tournaments||[]).find(x=>x.id===tId);
+  const t=getTournament(tId);
   const mod=(t?.modalidades||[]).find(m=>m.id===modId);
   if(!mod) return;
   document.getElementById('mr-body').innerHTML=`
@@ -5522,7 +5590,7 @@ function openEditMixtoClasif(tId, modId) {
 }
 
 function startMixtoZonaFinal(tId, modId) {
-  const t=(DB.tournaments||[]).find(x=>x.id===tId);
+  const t=getTournament(tId);
   const mod=(t?.modalidades||[]).find(m=>m.id===modId);
   if(!mod) return;
   const finalists=getZonasFinalists(t,mod);
@@ -5532,7 +5600,7 @@ function startMixtoZonaFinal(tId, modId) {
 }
 
 function openMixtoZoneMatch(tId, modId, zonaId) {
-  const t=(DB.tournaments||[]).find(x=>x.id===tId);
+  const t=getTournament(tId);
   const mod=(t?.modalidades||[]).find(m=>m.id===modId);
   const z=(mod?.zonas||[]).find(x=>x.id===zonaId);
   if(!z) return;
@@ -5592,7 +5660,7 @@ function bindModSumaPalos(t, mod) {
 }
 
 function openSetChampion(tId, modId) {
-  const t=(DB.tournaments||[]).find(x=>x.id===tId);
+  const t=getTournament(tId);
   const mod=(t?.modalidades||[]).find(m=>m.id===modId);
   if(!mod) return;
   const sgs=mod.equipos||[];
@@ -5609,7 +5677,7 @@ function openSetChampion(tId, modId) {
 }
 
 function openEditModPts(tId, modId) {
-  const t=(DB.tournaments||[]).find(x=>x.id===tId);
+  const t=getTournament(tId);
   const mod=(t?.modalidades||[]).find(m=>m.id===modId);
   if(!mod) return;
   const pts=mod.puntaje||[3,2,1];
@@ -5641,7 +5709,7 @@ function buildMixtoResultados(t) {
     return `<div class="team-row" style="align-items:center;gap:10px">
       <span class="${pc}" style="font-family:'Bebas Neue',cursive;font-size:1.1rem;min-width:24px;text-align:right">${i+1}</span>
       <div style="flex:1;min-width:0">
-        <div style="font-weight:700;font-size:.86rem">${i===0?'🏆 ':''}${eq.name}</div>
+        <div style="font-weight:700;font-size:.86rem">${i===0?'🏆 ':''}${esc(eq.name)}</div>
         <div class="team-pts-bar" style="margin-top:4px"><div class="team-pts-fill" style="width:${pct}%"></div></div>
       </div>
       <div style="text-align:right">
@@ -5726,7 +5794,7 @@ function buildMultifaseTab(t) {
   // Ronda tabs
   const rondaTabs = rondas.map((r,i) => `
     <button class="inner-tab ${i===ri?'active':''}" onclick="setActiveFase('${t.id}',${i})" style="font-size:.72rem">
-      ${r.name}${r.locked?' ✓':''}
+      ${esc(r.name)}${r.locked?' ✓':''}
     </button>`).join('');
 
   // Stats — only count zones with 2+ teams (odd distributions may leave 1-team zones)
@@ -5769,7 +5837,7 @@ function buildMultifaseTab(t) {
         }).join('');
         return `<div style="margin-bottom:14px">
           <div style="font-size:.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;margin-bottom:5px;display:flex;align-items:center;gap:6px">
-            ${z.name}
+            ${esc(z.name)}
             <span style="font-size:.58rem;font-weight:400;color:${playedM>=totalM&&totalM>0?'#86efac':'var(--muted)'}">${playedM}/${totalM}${playedM>=totalM&&totalM>0?' ✓':''}</span>
             ${!ronda.locked?`<button class="btn btn-ghost btn-sm admin-only" style="padding:1px 7px;font-size:.65rem" onclick="openMFZoneMatch('${t.id}',${ri},${zi})">+ Partido</button>`:''}
             ${!ronda.locked?`<button class="btn btn-ghost btn-sm admin-only" style="padding:1px 7px;font-size:.65rem" onclick="autoFillMFZone('${t.id}',${ri},${zi})">🎲</button>`:''}
@@ -5849,7 +5917,7 @@ function buildRondaElimHtml(t, ronda, ri) {
 function bindMultifaseTab(t) {}
 
 function setActiveFase(tId, idx) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t) return;
   t.rondaActiva = idx;
   renderTournamentDetail();
@@ -5873,7 +5941,7 @@ function getRondaClassified(t, ri) {
 }
 
 function openCerrarRonda(tId, ri) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t) return;
   const ronda = (t.rondas||[])[ri];
   if(!ronda) return;
@@ -6054,7 +6122,7 @@ function crUpdatePreview(maxCls) {
 }
 
 function openCrearRonda(tId, ri, availableOverride) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t) return;
   const available = availableOverride !== null ? availableOverride
     : ri === 0 ? (t.teams||[]).map(x=>x.id)
@@ -6153,7 +6221,7 @@ function nrUpdatePreview(total) {
 
 // Wire openMFZoneMatch / autoFillMFZone to use rondas
 function openMFZoneMatch(tId, ri, zi) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t) return;
   const ronda = (t.rondas||[])[ri];
   const z = (ronda?.zones||[])[zi];
@@ -6169,7 +6237,7 @@ function openMFZoneMatch(tId, ri, zi) {
   const ptsInd = t.ptsIndividual??1, ptsEq = t.ptsEquipo??2;
 
   document.getElementById('mr-body').innerHTML = `
-    <div style="font-size:.76rem;font-weight:700;margin-bottom:10px">${ronda.name} · ${z.name}</div>
+    <div style="font-size:.76rem;font-weight:700;margin-bottom:10px">${esc(ronda.name)} · ${esc(z.name)}</div>
     <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:end;margin-bottom:10px">
       <div><label class="label">Equipo A</label><select class="input" id="mfm-a">${entryOpts()}</select></div>
       <div style="padding-bottom:10px;color:var(--muted);font-family:'Bebas Neue',cursive;font-size:1.2rem">VS</div>
@@ -6184,7 +6252,7 @@ function openMFZoneMatch(tId, ri, zi) {
 }
 
 function autoFillMFZone(tId, ri, zi) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t) return;
   const ronda = (t.rondas||[])[ri];
   const z = (ronda?.zones||[])[zi];
@@ -6213,7 +6281,7 @@ function autoFillMFZone(tId, ri, zi) {
 
 function autoFillMFFase(tId) {
   snapshotTournament(tId);
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t) return;
   const ri = t.rondaActiva ?? (t.rondas||[]).length-1;
   const ronda = (t.rondas||[])[ri];
@@ -6243,7 +6311,7 @@ function saveMFZoneMatch(t, ri, zi, ptsInd, ptsEq) {
 }
 
 function lockMFFase(tId) {
-  openCerrarRonda(tId, (DB.tournaments||[]).find(x=>x.id===tId)?.rondaActiva ?? 0);
+  openCerrarRonda(tId, getTournament(tId)?.rondaActiva ?? 0);
 }
 
 function getMFClassified(t, ri) { return getRondaClassified(t, ri); }
@@ -6261,7 +6329,7 @@ function randPalos(min=100, max=280) {
 // ── Auto-fill Zonas ───────────────────────────────────────────────────
 function autoFillZonas(tId) {
   snapshotTournament(tId);
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!isTournamentAdmin()) return;
 
   const ptsInd = t.ptsIndividual ?? 1;
@@ -6316,7 +6384,7 @@ function autoFillZonas(tId) {
 // ── Auto-fill Bracket ─────────────────────────────────────────────────
 function autoFillBracket(tId) {
   snapshotTournament(tId);
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!isTournamentAdmin()) return;
   const rounds = t.bracketRounds||[];
   if(!rounds.length) { toast('No hay pica-pica generado','err'); return; }
@@ -6368,7 +6436,7 @@ function autoFillBracket(tId) {
 
 // ── Auto-fill Fase individual ─────────────────────────────────────────
 function autoFillFase(tId, phIdx) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!isTournamentAdmin()) return;
   const ph = (t.phases||[])[phIdx];
   if(!ph) return;
@@ -6437,7 +6505,7 @@ function getTeamPlayersName(t, teamId) {
 }
 
 function swapZoneEntry(tId, zoneId, fromIdx, toIdx) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t) return;
   const z = (t.zones||[]).find(x=>x.id===zoneId);
   if(!z || !z.entries) return;
@@ -6448,7 +6516,7 @@ function swapZoneEntry(tId, zoneId, fromIdx, toIdx) {
   save(); renderTournamentDetail();
 }
 function swapZonaFinalEntry(tId, fromIdx, toIdx) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t || !t.zonaFinal || !t.zonaFinal.entries) return;
   const entries = t.zonaFinal.entries;
   if(fromIdx < 0 || toIdx < 0 || fromIdx >= entries.length || toIdx >= entries.length) return;
@@ -6552,7 +6620,7 @@ async function deleteZoneMatch(tId, zoneId, matchKey) {
   if(!isAdmin()) return;
   const ok = await appConfirm('¿Borrar este resultado?');
   if(!ok) return;
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t) return;
   const z = findZoneById(t, zoneId);
   if(!z || !z.matches || !z.matches[matchKey]) return;
@@ -6588,14 +6656,14 @@ function buildZoneMatchHistory(t, z, getName) {
           const membTeam = isTeam ? (t.teams||[]).find(x=>x.id===m.id_a) : null;
           const pid = membTeam?.members?.[i];
           const pName = pid ? (DB.players.find(x=>x.id===pid)?.name?.split(',')[0]?.split(' ')[0] || '') : '';
-          return `<span style="font-size:.6rem;background:var(--card);border:1px solid var(--border);padding:1px 6px;border-radius:5px;color:var(--muted)">${pName ? pName+': ' : ''}${sc}</span>`;
+          return `<span style="font-size:.6rem;background:var(--card);border:1px solid var(--border);padding:1px 6px;border-radius:5px;color:var(--muted)">${pName ? esc(pName)+': ' : ''}${sc}</span>`;
         }).join('')}</div>` : '';
     const memberDetailB = memberScoresB.length
       ? `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:3px;justify-content:flex-end">${memberScoresB.map((sc,i)=>{
           const membTeam = isTeam ? (t.teams||[]).find(x=>x.id===m.id_b) : null;
           const pid = membTeam?.members?.[i];
           const pName = pid ? (DB.players.find(x=>x.id===pid)?.name?.split(',')[0]?.split(' ')[0] || '') : '';
-          return `<span style="font-size:.6rem;background:var(--card);border:1px solid var(--border);padding:1px 6px;border-radius:5px;color:var(--muted)">${pName ? pName+': ' : ''}${sc}</span>`;
+          return `<span style="font-size:.6rem;background:var(--card);border:1px solid var(--border);padding:1px 6px;border-radius:5px;color:var(--muted)">${pName ? esc(pName)+': ' : ''}${sc}</span>`;
         }).join('')}</div>` : '';
     const mKey = getZoneMatchKey(m.id_a, m.id_b);
     const editBtn = isAdmin() ? `<button onclick="editZoneMatch('${t.id}','${z.id}','${m.id_a}','${m.id_b}')" class="btn btn-ghost btn-sm" style="font-size:.7rem;padding:4px 14px">✏️ Editar</button>` : '';
@@ -6604,7 +6672,7 @@ function buildZoneMatchHistory(t, z, getName) {
     return `<div style="padding:10px 12px;border-bottom:1px solid var(--border)">
       <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center">
         <div>
-          <div style="font-weight:700;font-size:.8rem;color:${colorA};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${winA?'🏆 ':''}${nameA}</div>
+          <div style="font-weight:700;font-size:.8rem;color:${colorA};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${winA?'🏆 ':''}${esc(nameA)}</div>
           ${membA ? `<div style="font-size:.64rem;color:var(--muted)">${membA}</div>` : ''}
           ${memberDetailA}
         </div>
@@ -6613,7 +6681,7 @@ function buildZoneMatchHistory(t, z, getName) {
           <div style="font-size:.58rem;color:var(--muted)">${m.pts_a}pts vs ${m.pts_b}pts</div>
         </div>
         <div style="text-align:right">
-          <div style="font-weight:700;font-size:.8rem;color:${colorB};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${winB?'🏆 ':''}${nameB}</div>
+          <div style="font-weight:700;font-size:.8rem;color:${colorB};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${winB?'🏆 ':''}${esc(nameB)}</div>
           ${membB ? `<div style="font-size:.64rem;color:var(--muted)">${membB}</div>` : ''}
           ${memberDetailB}
         </div>
@@ -6694,7 +6762,7 @@ function buildZonasTab(t) {
     const clsText = `${clsZona} por zona${clsTerceros>0?' + '+clsTerceros+' clasif. por palos':''}`;
     genBracketBtn = `<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px;padding:10px 12px;background:var(--card);border:1px solid var(--border);border-radius:10px">
       <div style="flex:1;min-width:0">
-        <div style="font-size:.7rem;color:var(--muted)">Clasifican: <strong style="color:var(--text)">${clsText}</strong> → <strong style="color:var(--accent)">${total} ${t.mode==='trio'?'tríos':t.mode==='sexteto'?'sextetos':'parejas'} al pica-pica</strong></div>
+        <div style="font-size:.7rem;color:var(--muted)">Clasifican: <strong style="color:var(--text)">${clsText}</strong> → <strong style="color:var(--accent)">${total} ${teamModeLabel(t.mode)} al pica-pica</strong></div>
       </div>
       ${isTournamentAdmin()?`
       <button class="btn btn-ghost btn-sm" onclick="openMarkZoneClassified('${t.id}')">✋ Marcar clasificados</button>
@@ -6711,13 +6779,13 @@ function buildZonasTab(t) {
   const tables = (zonesToRender||[]).map(z => {
     if(!z.entries||!z.entries.length) {
       const isTeamMode = t.mode==='equipo'||t.mode==='trio'||t.mode==='sexteto';
-      const teamLabel = t.mode==='trio'?'tríos':t.mode==='sexteto'?'sextetos':'parejas';
+      const teamLabel = teamModeLabel(t.mode);
       const assignBtn = (!viewingArchivedFase && isTournamentAdmin() && isTeamMode)
         ? `<button class="btn btn-accent btn-sm" style="margin-top:8px" onclick="openZoneAssignTeams('${t.id}','${z.id}')">+ Asignar ${teamLabel}</button>`
         : '';
       return `<div class="zona-rrblock" id="zona-block-${z.id}">
         <div class="zona-rr-title" style="display:flex;align-items:center;gap:8px">
-        ${z.name}
+        ${esc(z.name)}
         ${(t.mode==='equipo'||t.mode==='trio'||t.mode==='sexteto')&&(t.ptsIndividual!=null||t.ptsEquipo!=null)?`<span style="font-size:.58rem;color:var(--muted);font-family:inherit">Pts ind: ${t.ptsIndividual??1} · Eq: ${t.ptsEquipo??2}</span>`:''}
         <button class="btn btn-ghost btn-sm" style="margin-left:auto;padding:2px 7px;font-size:.7rem" onclick="captureZone('${t.id}','${z.id}')" title="Descargar imagen de la zona">📸</button>
       </div>
@@ -6750,7 +6818,7 @@ function buildZonasTab(t) {
 
     // Build rows
     const isTeamMode2 = t.mode==='equipo'||t.mode==='trio'||t.mode==='sexteto';
-    const teamLabel2 = t.mode==='trio'?'tríos':t.mode==='sexteto'?'sextetos':'parejas';
+    const teamLabel2 = teamModeLabel(t.mode);
     const assignBtn2 = (!viewingArchivedFase && isTournamentAdmin() && isTeamMode2)
       ? `<button class="btn btn-ghost btn-sm" style="margin-top:6px" onclick="openZoneAssignTeams('${t.id}','${z.id}')">+ Asignar ${teamLabel2}</button>`
       : '';
@@ -6831,7 +6899,7 @@ function buildZonasTab(t) {
 
     return `<div class="zona-rrblock" id="zona-block-${z.id}">
       <div style="margin-bottom:10px;display:flex;align-items:center;gap:8px">
-        <div class="zona-rr-title" style="margin-bottom:0">${z.name}</div>
+        <div class="zona-rr-title" style="margin-bottom:0">${esc(z.name)}</div>
         ${!viewingArchivedFase && isTournamentAdmin() ? `<button class="btn btn-ghost btn-sm" style="padding:2px 7px;font-size:.7rem" onclick="openRenameZone('${t.id}','${z.id}')">✏️</button>` : ''}
         ${!viewingArchivedFase && isTournamentAdmin() && (zonesToRender||[]).length > 1 ? `<button class="btn btn-danger btn-sm" style="padding:2px 7px;font-size:.65rem" onclick="deleteZone('${t.id}','${z.id}')">🗑</button>` : ''}
         <button class="btn btn-ghost btn-sm" style="margin-left:auto;padding:2px 7px;font-size:.7rem" onclick="captureZone('${t.id}','${z.id}')" title="Descargar imagen de la zona">📸</button>
@@ -6889,7 +6957,7 @@ function buildZonasTab(t) {
       avanzarPanel = `<div style="margin-top:16px;padding:14px 16px;background:linear-gradient(135deg,rgba(56,189,248,.1),rgba(99,102,241,.06));border:1.5px solid rgba(56,189,248,.35);border-radius:12px">
         <div style="font-size:.8rem;font-weight:700;color:#38bdf8;margin-bottom:4px">✅ Fase completada</div>
         ${markedInfo}
-        <div style="font-size:.68rem;color:var(--muted);margin-bottom:4px">Clasificación: <strong style="color:var(--text)">${clsText}</strong> → <strong style="color:var(--accent)">${classified.length} ${t.mode==='trio'?'tríos':t.mode==='sexteto'?'sextetos':'parejas'}</strong></div>
+        <div style="font-size:.68rem;color:var(--muted);margin-bottom:4px">Clasificación: <strong style="color:var(--text)">${clsText}</strong> → <strong style="color:var(--accent)">${classified.length} ${teamModeLabel(t.mode)}</strong></div>
         <div style="font-size:.68rem;color:var(--muted);margin-bottom:10px;line-height:1.5">${classified.map(getTeamName).join(' · ')||'—'}</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           ${markBtn}
@@ -6927,25 +6995,25 @@ function rrToggleExpand(zid) {
 }
 
 function openZoneAssignTeams(tId, zoneId) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!isTournamentAdmin()) return;
   const z = t.zones.find(x=>x.id===zoneId);
   if(!z) return;
   const teamLabel  = t.mode==='trio'?'trío':t.mode==='sexteto'?'sexteto':'pareja';
-  const teamsLabel = t.mode==='trio'?'tríos':t.mode==='sexteto'?'sextetos':'parejas';
+  const teamsLabel = teamModeLabel(t.mode);
 
   // All teams with their current zone
   const teamRows = (t.teams||[]).map(team => {
     const curZone = getEntryZone(t, team.id);
     const isInThisZone = curZone?.id === zoneId;
     const members = (team.members||[]).map(pid => DB.players.find(x=>x.id===pid)?.name?.split(' ')[0]).filter(Boolean).join(' · ');
-    const zoneLabel = curZone ? (isInThisZone ? `<span style="color:#86efac;font-size:.65rem">✓ En esta zona</span>` : `<span style="color:#3b82f6;font-size:.65rem">En ${curZone.name}</span>`) : `<span style="color:var(--muted);font-size:.65rem">Sin zona</span>`;
+    const zoneLabel = curZone ? (isInThisZone ? `<span style="color:#86efac;font-size:.65rem">✓ En esta zona</span>` : `<span style="color:#3b82f6;font-size:.65rem">En ${esc(curZone.name)}</span>`) : `<span style="color:var(--muted);font-size:.65rem">Sin zona</span>`;
     const checked = isInThisZone ? 'checked' : '';
     return `<label style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);cursor:pointer">
       <input type="checkbox" class="zat-chk" data-tid="${team.id}" ${checked}
         style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer">
       <div style="flex:1;min-width:0">
-        <div style="font-weight:700;font-size:.84rem">${team.name}</div>
+        <div style="font-weight:700;font-size:.84rem">${esc(team.name)}</div>
         <div style="font-size:.64rem;color:var(--muted)">${members||'Sin integrantes'}</div>
       </div>
       ${zoneLabel}
@@ -6953,7 +7021,7 @@ function openZoneAssignTeams(tId, zoneId) {
   }).join('');
 
   document.getElementById('mr-body').innerHTML = `
-    <div style="font-size:.76rem;color:var(--muted);margin-bottom:10px">Seleccioná los ${teamsLabel} para <strong style="color:var(--text)">${z.name}</strong>. Los que ya están en otra zona serán movidos.</div>
+    <div style="font-size:.76rem;color:var(--muted);margin-bottom:10px">Seleccioná los ${teamsLabel} para <strong style="color:var(--text)">${esc(z.name)}</strong>. Los que ya están en otra zona serán movidos.</div>
     <div style="max-height:55vh;overflow-y:auto">${teamRows||`<div style="color:var(--muted);font-size:.8rem;padding:12px 0">No hay ${teamsLabel} creados. Primero creá los ${teamsLabel} en la pestaña correspondiente.</div>`}</div>`;
 
   document.getElementById('mr-submit').textContent = 'Guardar asignación';
@@ -6979,7 +7047,7 @@ function bindZonasTab(t) {
 
 // ── Ver fase anterior (read-only modal) ───────────────────────────────
 function openRenameFase(tId, idx) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!isTournamentAdmin()) return;
   const isCurrent = idx === -1;
   const f = isCurrent ? null : (t.zonasFase||[])[idx];
@@ -7011,7 +7079,7 @@ function openRenameFase(tId, idx) {
 }
 
 async function deleteZone(tId, zId) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!isTournamentAdmin()) return;
   const z = (t.zones||[]).find(x=>x.id===zId);
   if(!z) return;
@@ -7024,7 +7092,7 @@ async function deleteZone(tId, zId) {
 }
 
 function openRenameZone(tId, zId) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!isTournamentAdmin()) return;
   const z = (t.zones||[]).find(x=>x.id===zId);
   if(!z) return;
@@ -7032,7 +7100,7 @@ function openRenameZone(tId, zId) {
     <div style="font-size:.76rem;color:var(--muted);margin-bottom:12px">Renombrar zona</div>
     <div class="field">
       <label class="label">Nombre de la zona</label>
-      <input class="input" id="rz-name" type="text" value="${z.name}" maxlength="40" style="font-size:1rem;font-weight:700">
+      <input class="input" id="rz-name" type="text" value="${esc(z.name)}" maxlength="40" style="font-size:1rem;font-weight:700">
     </div>`;
   document.getElementById('mr-submit').textContent = 'Guardar';
   document.getElementById('mr-submit').onclick = () => {
@@ -7049,14 +7117,14 @@ function openRenameZone(tId, zId) {
 }
 
 function setZonasFase(tId, idx) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t) return;
   t._zonasFaseActiva = idx; // -1 = actual, 0+ = archived
   renderTournamentDetail();
 }
 
 async function deleteZonasFase(tId, idx) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!isTournamentAdmin()) return;
   const fases = t.zonasFase||[];
   if(idx < 0 || idx >= fases.length) return;
@@ -7075,7 +7143,7 @@ function openVerFaseAnterior(tId, faseIdx) {
   setZonasFase(tId, faseIdx);
 }
 function openEditZoneAdvanceCfg(tId) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!isTournamentAdmin()) return;
   const clsN = t.clasificadosPorZona||2;
   const clsT = t.mejoresTerceros||0;
@@ -7103,7 +7171,7 @@ function openEditZoneAdvanceCfg(tId) {
 // ── Open "Avanzar a siguiente fase" modal ──────────────────────────────
 function confirmarFinalizarTorneo(tId) {
   snapshotTournament(tId);
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!isTournamentAdmin()) return;
   document.getElementById('mr-body').innerHTML = `
     <div style="text-align:center;padding:8px 0 16px">
@@ -7126,7 +7194,7 @@ function confirmarFinalizarTorneo(tId) {
 }
 
 function openMarkZoneClassified(tId) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!isTournamentAdmin()) return;
   const clsN = t.clasificadosPorZona || 2;
   const allEntries = [];
@@ -7147,7 +7215,7 @@ function openMarkZoneClassified(tId) {
 
 function openAvanzarZonas(tId) {
   snapshotTournament(tId);
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!isTournamentAdmin()) return;
 
   let classified;
@@ -7178,7 +7246,7 @@ function openAvanzarZonas(tId) {
   document.getElementById('mr-body').innerHTML = `
     <div style="font-weight:700;font-size:.9rem;margin-bottom:4px">➡️ Avanzar a siguiente fase</div>
     <div style="font-size:.7rem;color:var(--muted);margin-bottom:12px">
-      ${maxCls} ${t.mode==='trio'?'tríos':t.mode==='sexteto'?'sextetos':'parejas'} clasificados: ${classified.map(getName).join(', ')||'—'}
+      ${maxCls} ${teamModeLabel(t.mode)} clasificados: ${classified.map(getName).join(', ')||'—'}
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:10px">
       <div class="field"><label class="label">Avanzan</label>
@@ -7276,7 +7344,7 @@ function startBracketFromTeams(tId, teamIds) {
 
 function openZoneRRMatch(tId, zoneId, preA, preB) {
   if(!isAdmin()) return;
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t) return;
   const z = findZoneById(t, zoneId);
   if(!z) return;
@@ -7561,7 +7629,7 @@ function rrCalcPoints() {
 }
 
 function rrRefreshMembers(tId, zoneId, _side) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t) return;
   const grid = document.getElementById('rr-members-grid');
   if(!grid) return;
@@ -7624,7 +7692,7 @@ function bindBracketTab(t) {
 }
 
 function resetBracket(tId) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t) return;
   t.bracket = []; t.bracketRounds = [];
   if(t.format === 'suma+repechaje+zona') t.repechajeBracket = [];
@@ -7632,7 +7700,7 @@ function resetBracket(tId) {
 }
 
 async function deleteBracketRound(tId, roundIdx) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!isTournamentAdmin()) return;
   const rounds = t.bracketRounds||[];
   if(roundIdx < 0 || roundIdx >= rounds.length) return;
@@ -7690,11 +7758,11 @@ function buildBracketTab(t) {
       const ptsLabelB = showPts ? `<span style="font-size:.6rem;color:var(--accent);margin-left:4px;font-weight:700">${m.ptsB%1?m.ptsB.toFixed(1):m.ptsB}pts</span>` : '';
       return `<div class="bracket-match" ${click} style="${clickable?'cursor:pointer':''}">
         <div class="bracket-slot ${clsA}">
-          <span>${nameA}</span>
+          <span>${esc(nameA)}</span>
           <span class="slot-score">${m.palosA != null ? m.palosA : ''}${ptsLabelA}${msDetailA}</span>
         </div>
         <div class="bracket-slot ${clsB}">
-          <span>${nameB}</span>
+          <span>${esc(nameB)}</span>
           <span class="slot-score">${m.palosB != null ? m.palosB : ''}${ptsLabelB}${msDetailB}</span>
         </div>
       </div>`;
@@ -7774,7 +7842,7 @@ function buildBracketTab(t) {
 // ── Start bracket ──────────────────────────────────────────────────────
 function startBracketFromZones(tId) {
   snapshotTournament(tId);
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t) return;
   let all;
   if((t.zoneClassified||[]).length > 0) {
@@ -7792,7 +7860,7 @@ function startBracketFromZones(tId) {
 }
 
 function startBracketManual(tId) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t) return;
   const entries = (t.mode==='equipo'||t.mode==='trio'||t.mode==='sexteto') ? (t.teams||[]).map(x=>x.id) : (t.participants||[]);
   if(entries.length < 2) { toast('Necesitás al menos 2 participantes','err'); return; }
@@ -7804,7 +7872,7 @@ function startBracketManual(tId) {
 
 function openNextRound(tId, ri) {
   ri = parseInt(ri);
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   const round = (t?.bracketRounds||[])[ri];
   if(!round) return;
   const winners = round.matches.map(m=>m.winner).filter(Boolean);
@@ -7816,7 +7884,7 @@ function openNextRound(tId, ri) {
 }
 
 function openCreateRound(tId, available, roundIdx, opts) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t) return;
   opts = opts || {};
   const bracketKey = opts.bracketKey || 'bracketRounds';
@@ -7914,7 +7982,7 @@ function openCreateRound(tId, available, roundIdx, opts) {
 function openBracketMatchView(tId, ri, matchId) {
   if(isTournamentAdmin()) return openDynBracketMatch(tId, ri, matchId);
   // Read-only view
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   const useRepechaje = window._repechajeReadonly;
   window._repechajeReadonly = false;
   const srcRounds = useRepechaje ? (t?.repechajeBracket||[]) : (t?.bracketRounds||[]);
@@ -7932,7 +8000,7 @@ function openBracketMatchView(tId, ri, matchId) {
   const winB = m.winner === m.b;
 
   let bodyHtml = `<div style="text-align:center;margin-bottom:14px;font-size:.9rem;font-weight:700">
-    ${nameA} <span style="color:var(--muted)">vs</span> ${nameB}</div>`;
+    ${esc(nameA)} <span style="color:var(--muted)">vs</span> ${esc(nameB)}</div>`;
 
   if(isTeam && teamA && teamB) {
     const storedA = _migrateScores(m.member_scores_a, (teamA.members||[]).length, lineas);
@@ -7962,14 +8030,14 @@ function openBracketMatchView(tId, ri, matchId) {
     bodyHtml += `
       <div style="margin-bottom:14px">
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
-          <span style="font-size:.72rem;font-weight:700;color:${colorA}">${winA?'🏆 ':''}${nameA}</span>
+          <span style="font-size:.72rem;font-weight:700;color:${colorA}">${winA?'🏆 ':''}${esc(nameA)}</span>
           <span style="margin-left:auto;font-family:'Bebas Neue',cursive;font-size:1.3rem;color:${colorA}">${m.palosA}</span>
         </div>
         ${readonlyRows(teamA, storedA, winA)}
       </div>
       <div style="margin-bottom:6px">
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
-          <span style="font-size:.72rem;font-weight:700;color:${colorB}">${winB?'🏆 ':''}${nameB}</span>
+          <span style="font-size:.72rem;font-weight:700;color:${colorB}">${winB?'🏆 ':''}${esc(nameB)}</span>
           <span style="margin-left:auto;font-family:'Bebas Neue',cursive;font-size:1.3rem;color:${colorB}">${m.palosB}</span>
         </div>
         ${readonlyRows(teamB, storedB, winB)}
@@ -7985,12 +8053,12 @@ function openBracketMatchView(tId, ri, matchId) {
     bodyHtml += `
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;text-align:center">
         <div style="padding:14px;background:var(--card);border:1px solid var(--border);border-radius:10px">
-          <div style="font-size:.68rem;color:var(--muted);margin-bottom:4px">${nameA}</div>
+          <div style="font-size:.68rem;color:var(--muted);margin-bottom:4px">${esc(nameA)}</div>
           <div style="font-family:'Bebas Neue',cursive;font-size:2rem;color:${colorA}">${m.palosA}</div>
           ${winA?'<div style="font-size:.65rem;color:#86efac;margin-top:2px">🏆 Ganador</div>':''}
         </div>
         <div style="padding:14px;background:var(--card);border:1px solid var(--border);border-radius:10px">
-          <div style="font-size:.68rem;color:var(--muted);margin-bottom:4px">${nameB}</div>
+          <div style="font-size:.68rem;color:var(--muted);margin-bottom:4px">${esc(nameB)}</div>
           <div style="font-family:'Bebas Neue',cursive;font-size:2rem;color:${colorB}">${m.palosB}</div>
           ${winB?'<div style="font-size:.65rem;color:#86efac;margin-top:2px">🏆 Ganador</div>':''}
         </div>
@@ -8006,7 +8074,7 @@ function openBracketMatchView(tId, ri, matchId) {
 // ── Match result entry (admin only) ───────────────────────────────────
 function openDynBracketMatch(tId, ri, matchId, bracketSource) {
   if(!isTournamentAdmin()) return;
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   const srcRounds = bracketSource === 'repechajeBracket' ? (t?.repechajeBracket||[]) : (t?.bracketRounds||[]);
   const round = srcRounds[parseInt(ri)];
   const m = round?.matches?.find(x=>x.id===matchId);
@@ -8052,7 +8120,7 @@ function openDynBracketMatch(tId, ri, matchId, bracketSource) {
         }).join('');
         const subtotalId = `dbm-sub-${side}-${mi}`;
         return `<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;padding:4px 0;border-bottom:1px solid var(--border)">
-          <span style="flex:1;font-size:.74rem;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${pName} ${hcTag}</span>
+          <span style="flex:1;font-size:.74rem;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(pName)} ${hcTag}</span>
           <div style="display:flex;gap:3px;flex-shrink:0">${inputs}</div>
           <span id="${subtotalId}" style="font-family:'Bebas Neue',cursive;font-size:.9rem;color:var(--accent);min-width:32px;text-align:right;flex-shrink:0">—</span>
         </div>`;
@@ -8063,32 +8131,32 @@ function openDynBracketMatch(tId, ri, matchId, bracketSource) {
     const rowsB = memberLineInputs(teamB.members, storedB, 'b');
 
     document.getElementById('mr-body').innerHTML = `
-      <div style="text-align:center;margin-bottom:10px;font-size:.9rem;font-weight:700">${nameA} <span style="color:var(--muted)">vs</span> ${nameB}</div>
+      <div style="text-align:center;margin-bottom:10px;font-size:.9rem;font-weight:700">${esc(nameA)} <span style="color:var(--muted)">vs</span> ${esc(nameB)}</div>
       <div style="text-align:center;margin-bottom:14px;font-size:.65rem;color:var(--muted)">${lineas} línea${lineas!==1?'s':''} por jugador</div>
       <div style="margin-bottom:14px">
-        <div style="font-size:.7rem;font-weight:700;color:var(--accent);margin-bottom:6px">${nameA}</div>
+        <div style="font-size:.7rem;font-weight:700;color:var(--accent);margin-bottom:6px">${esc(nameA)}</div>
         ${rowsA}
       </div>
       <div style="margin-bottom:14px">
-        <div style="font-size:.7rem;font-weight:700;color:var(--accent);margin-bottom:6px">${nameB}</div>
+        <div style="font-size:.7rem;font-weight:700;color:var(--accent);margin-bottom:6px">${esc(nameB)}</div>
         ${rowsB}
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:10px;background:var(--card);border:1px solid var(--border);border-radius:10px">
         <div style="text-align:center">
-          <div style="font-size:.6rem;color:var(--muted);margin-bottom:2px">PALOS ${nameA}</div>
+          <div style="font-size:.6rem;color:var(--muted);margin-bottom:2px">PALOS ${esc(nameA)}</div>
           <div id="dbm-tot-a" style="font-family:'Bebas Neue',cursive;font-size:1.6rem;color:var(--accent)">0</div>
         </div>
         <div style="text-align:center">
-          <div style="font-size:.6rem;color:var(--muted);margin-bottom:2px">PALOS ${nameB}</div>
+          <div style="font-size:.6rem;color:var(--muted);margin-bottom:2px">PALOS ${esc(nameB)}</div>
           <div id="dbm-tot-b" style="font-family:'Bebas Neue',cursive;font-size:1.6rem;color:var(--accent)">0</div>
         </div>
         ${winByPts ? `
         <div style="text-align:center">
-          <div style="font-size:.6rem;color:var(--muted);margin-bottom:2px">PTS ${nameA}</div>
+          <div style="font-size:.6rem;color:var(--muted);margin-bottom:2px">PTS ${esc(nameA)}</div>
           <div id="dbm-pts-a" style="font-family:'Bebas Neue',cursive;font-size:1.4rem;color:#86efac">—</div>
         </div>
         <div style="text-align:center">
-          <div style="font-size:.6rem;color:var(--muted);margin-bottom:2px">PTS ${nameB}</div>
+          <div style="font-size:.6rem;color:var(--muted);margin-bottom:2px">PTS ${esc(nameB)}</div>
           <div id="dbm-pts-b" style="font-family:'Bebas Neue',cursive;font-size:1.4rem;color:#86efac">—</div>
         </div>` : ''}
       </div>
@@ -8138,12 +8206,12 @@ function openDynBracketMatch(tId, ri, matchId, bracketSource) {
   } else {
     // ── Individual / non-team mode: single score per side ──
     document.getElementById('mr-body').innerHTML = `
-      <div style="text-align:center;margin-bottom:14px;font-size:.9rem;font-weight:700">${nameA} <span style="color:var(--muted)">vs</span> ${nameB}</div>
+      <div style="text-align:center;margin-bottom:14px;font-size:.9rem;font-weight:700">${esc(nameA)} <span style="color:var(--muted)">vs</span> ${esc(nameB)}</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-        <div class="field"><label class="label">${nameA} — Palos</label>
+        <div class="field"><label class="label">${esc(nameA)} — Palos</label>
           <input class="input" id="dbm-a" type="number" min="0" value="${m.palosA!=null?m.palosA:''}" placeholder="0"
             style="text-align:center;font-family:'Bebas Neue',cursive;font-size:1.6rem"></div>
-        <div class="field"><label class="label">${nameB} — Palos</label>
+        <div class="field"><label class="label">${esc(nameB)} — Palos</label>
           <input class="input" id="dbm-b" type="number" min="0" value="${m.palosB!=null?m.palosB:''}" placeholder="0"
             style="text-align:center;font-family:'Bebas Neue',cursive;font-size:1.6rem"></div>
       </div>`;
@@ -8265,7 +8333,7 @@ function dbmCalcTotals() {
 }
 
 function openEditZoneClassif(tId) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!isTournamentAdmin()) return;
   const hasZones = t.format==='zona' || t.format==='zona+elim';
   const hasElim  = t.format==='eliminacion' || t.format==='zona+elim';
@@ -8320,7 +8388,7 @@ function getEntryTeamName(t, id) {
 }
 
 function generateBracket(tId) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t) return;
   const entries = (t.mode==='equipo'||t.mode==='trio'||t.mode==='sexteto') ? (t.teams||[]).map(x=>x.id) : (t.participants||[]);
   if(entries.length < 2) { toast('Necesitás al menos 2 participantes','err'); return; }
@@ -8378,16 +8446,16 @@ function createBracketMatches(entries, forcedSize) {
 
 function openBracketMatch(tId, matchId) {
   if(!isTournamentAdmin()) return;
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   const m = (t?.bracket||[]).find(x=>x.id===matchId);
   if(!m) return;
   const nameA = getEntryName(t, m.a) || 'TBD';
   const nameB = getEntryName(t, m.b) || 'TBD';
   document.getElementById('mr-body').innerHTML = `
-    <div style="text-align:center;margin-bottom:16px;font-size:.9rem;font-weight:700">${nameA} <span style="color:var(--muted)">vs</span> ${nameB}</div>
+    <div style="text-align:center;margin-bottom:16px;font-size:.9rem;font-weight:700">${esc(nameA)} <span style="color:var(--muted)">vs</span> ${esc(nameB)}</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
-      <div class="field"><label class="label">${nameA}</label><input class="input" id="bm-sa" type="number" min="0" value="${m.scoreA||''}" placeholder="0" style="text-align:center;font-family:'Bebas Neue',cursive;font-size:1.6rem"></div>
-      <div class="field"><label class="label">${nameB}</label><input class="input" id="bm-sb" type="number" min="0" value="${m.scoreB||''}" placeholder="0" style="text-align:center;font-family:'Bebas Neue',cursive;font-size:1.6rem"></div>
+      <div class="field"><label class="label">${esc(nameA)}</label><input class="input" id="bm-sa" type="number" min="0" value="${m.scoreA||''}" placeholder="0" style="text-align:center;font-family:'Bebas Neue',cursive;font-size:1.6rem"></div>
+      <div class="field"><label class="label">${esc(nameB)}</label><input class="input" id="bm-sb" type="number" min="0" value="${m.scoreB||''}" placeholder="0" style="text-align:center;font-family:'Bebas Neue',cursive;font-size:1.6rem"></div>
     </div>`;
   document.getElementById('mr-submit').textContent = 'Guardar resultado';
   document.getElementById('mr-submit').onclick = () => {
@@ -8463,7 +8531,7 @@ function buildSextPuntajesTab(t) {
     return `<div class="sext-card" data-teamid="${team.id}" style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:12px">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
         <span style="font-family:'Bebas Neue',cursive;font-size:1rem;color:#60a5fa">6️⃣</span>
-        <span style="font-weight:700;font-size:.95rem;flex:1">${team.name}</span>
+        <span style="font-weight:700;font-size:.95rem;flex:1">${esc(team.name)}</span>
         ${allFilled ? `<span style="font-size:.6rem;color:#86efac;border:1px solid rgba(134,239,172,.25);padding:1px 7px;border-radius:5px">✓</span>` : ''}
         <span class="sext-teamtotal-${team.id}" style="font-family:'Bebas Neue',cursive;font-size:1.5rem;color:var(--accent)">${teamTotal || '—'}</span>
       </div>
@@ -8486,7 +8554,7 @@ function buildSextPuntajesTab(t) {
       const gap = i > 0 ? `<span style="font-size:.6rem;color:#f87171;margin-left:4px">-${(ranked[0].palos - r.palos).toLocaleString()}</span>` : '';
       return `<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)">
         <span style="font-family:'Bebas Neue',cursive;font-size:1.1rem;min-width:24px;text-align:right;color:${rc}">${i+1}</span>
-        <div style="flex:1;font-weight:700;font-size:.88rem">${r.name}</div>
+        <div style="flex:1;font-weight:700;font-size:.88rem">${esc(r.name)}</div>
         <div style="text-align:right">
           <span style="font-family:'Bebas Neue',cursive;font-size:1.4rem;color:${rc}">${r.palos.toLocaleString()}</span>${gap}
           <div style="font-size:.58rem;color:var(--muted)">palos totales</div>
@@ -8546,7 +8614,7 @@ function buildSextPuntajesTab(t) {
     return `<div class="sext-card" data-teamid="${team.id}" style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:12px">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
         <span style="font-family:'Bebas Neue',cursive;font-size:1rem;color:#60a5fa">6️⃣</span>
-        <span style="font-weight:700;font-size:.95rem;flex:1">${team.name}</span>
+        <span style="font-weight:700;font-size:.95rem;flex:1">${esc(team.name)}</span>
         ${allFilled ? `<span style="font-size:.6rem;color:#86efac;border:1px solid rgba(134,239,172,.25);padding:1px 7px;border-radius:5px">✓</span>` : ''}
         <span class="sext-teamtotal-${team.id}" style="font-family:'Bebas Neue',cursive;font-size:1.5rem;color:var(--accent)">${teamTotal || '—'}</span>
       </div>
@@ -8570,7 +8638,7 @@ function bindSextPuntajesTab(t) {
 
 function sextUpdateLine(el) {
   const { tid, teamid, pid, idx } = el.dataset;
-  const t = (DB.tournaments||[]).find(x=>x.id===tid);
+  const t = getTournament(tid);
   if(!t) return;
   if(!t.sextScores) t.sextScores = {};
   if(!t.sextScores[teamid]) t.sextScores[teamid] = {};
@@ -8592,7 +8660,7 @@ function sextUpdateLine(el) {
 
 function sextAutoFill(tId) {
   snapshotTournament(tId);
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t) return;
   if(!t.sextScores) t.sextScores = {};
   const lineas = t.lineasPorJugador || 3;
@@ -8655,7 +8723,7 @@ function buildSumaPalosTab(t) {
     <div style="margin-bottom:14px;padding:12px 14px;background:rgba(56,189,248,.06);border:1px solid rgba(56,189,248,.2);border-radius:12px">
       <div style="font-size:.7rem;color:#38bdf8;font-weight:700;margin-bottom:6px">🏆 Clasifican al pica-pica: top ${clsN}</div>
       <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px">
-        ${clsTeams.map((r,i)=>`<span style="font-size:.68rem;background:var(--card);border:1px solid rgba(56,189,248,.3);padding:2px 8px;border-radius:6px;color:#38bdf8">${i+1}. ${r.name} <strong>${r.total}</strong></span>`).join('')}
+        ${clsTeams.map((r,i)=>`<span style="font-size:.68rem;background:var(--card);border:1px solid rgba(56,189,248,.3);padding:2px 8px;border-radius:6px;color:#38bdf8">${i+1}. ${esc(r.name)} <strong>${r.total}</strong></span>`).join('')}
       </div>
       ${canEdit && pendingNext ? startBtn : ''}
       ${canEdit ? `<button class="btn btn-ghost btn-sm" onclick="${editFn}('${t.id}')">⚙️ Cambiar cantidad (${clsN})</button>` : ''}
@@ -8694,7 +8762,7 @@ function buildSumaPalosTab(t) {
       return `<div style="padding:6px 0;border-bottom:1px solid var(--border)">
         <div style="display:flex;align-items:center;gap:4px;margin-bottom:4px">
           <span class="badge ${CAT_CLS[cat]||''}" style="font-size:.48rem;padding:1px 4px">${cat}</span>
-          <span style="font-size:.76rem;font-weight:600">${pName}</span>
+          <span style="font-size:.76rem;font-weight:600">${esc(pName)}</span>
           ${hcBadge}
           <span class="sp-m-total-${r.id}-${pid}" style="margin-left:auto;font-family:'Bebas Neue',cursive;font-size:.9rem;color:var(--accent);flex-shrink:0">${pTotal||'—'}</span>
         </div>
@@ -8705,7 +8773,7 @@ function buildSumaPalosTab(t) {
     return `<div style="background:var(--card);border:1.5px solid ${borderColor};border-radius:12px;padding:11px 13px;margin-bottom:10px">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
         <span style="font-family:'Bebas Neue',cursive;font-size:1rem;color:var(--muted);min-width:22px;text-align:right">${idx+1}</span>
-        <span style="font-weight:700;font-size:.9rem;flex:1">${r.name}</span>
+        <span style="font-weight:700;font-size:.9rem;flex:1">${esc(r.name)}</span>
         ${isClassified ? `<span style="font-size:.58rem;color:#38bdf8;border:1px solid rgba(56,189,248,.3);padding:1px 6px;border-radius:5px">Top ${clsN}</span>` : ''}
         <span class="sp-team-total-${r.id}" style="font-family:'Bebas Neue',cursive;font-size:1.5rem;color:var(--accent)">${r.total||'—'}</span>
       </div>
@@ -8732,7 +8800,7 @@ function bindSumaPalosTab(t) {
 
 function spMemberUpdate(el) {
   const { tid, teamid, pid, li } = el.dataset;
-  const t = (DB.tournaments||[]).find(x=>x.id===tid);
+  const t = getTournament(tid);
   if(!t) return;
   if(!t.sumaPalosMember) t.sumaPalosMember = {};
   if(!t.sumaPalosMember[teamid]) t.sumaPalosMember[teamid] = {};
@@ -8759,7 +8827,7 @@ function spMemberUpdate(el) {
 // Legacy handler kept for backward compat
 function spUpdateLine(el) {
   const { tid, teamid, idx } = el.dataset;
-  const t = (DB.tournaments||[]).find(x=>x.id===tid);
+  const t = getTournament(tid);
   if(!t) return;
   if(!t.sumaPalosScores) t.sumaPalosScores = {};
   if(!t.sumaPalosScores[teamid]) t.sumaPalosScores[teamid] = [];
@@ -8772,7 +8840,7 @@ function spUpdateLine(el) {
 
 function spAutoFill(tId) {
   snapshotTournament(tId);
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!isTournamentAdmin()) return;
   if(!t.sumaPalosMember) t.sumaPalosMember = {};
   const lineas = t.sumaLineasPorJugador || 3;
@@ -8791,7 +8859,7 @@ function spAutoFill(tId) {
 }
 
 function openEditSumaLineas(tId) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!isTournamentAdmin()) return;
   document.getElementById('mr-body').innerHTML = `
     <div style="font-size:.76rem;color:var(--muted);margin-bottom:12px">¿Cuántas líneas juega cada jugador en la clasificación?</div>
@@ -8809,7 +8877,7 @@ function openEditSumaLineas(tId) {
 }
 
 function openEditSumaClasif(tId) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!isTournamentAdmin()) return;
   const teamLabel = t.mode==='trio'?'tríos':'parejas';
   document.getElementById('mr-body').innerHTML = `
@@ -8885,7 +8953,7 @@ function openSelectAdvancingModal(t, items, preSelected, onConfirm, title) {
 }
 
 function startBracketFromSumapalos(tId) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!isTournamentAdmin()) return;
   const isSumaZona = t.format === 'suma+zona' || t.format === 'suma+repechaje+zona';
   const isRepFmt = t.format === 'suma+repechaje+zona';
@@ -9125,11 +9193,11 @@ function buildTournamentPlayerAverages(t) {
     return `<div class="team-row" style="align-items:center;gap:10px">
       <span style="font-family:'Bebas Neue',cursive;font-size:.95rem;min-width:22px;text-align:right;color:var(--muted)">${i+1}</span>
       <div style="flex:1;min-width:0">
-        <div style="font-weight:600;font-size:.82rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.name}</div>
+        <div style="font-weight:600;font-size:.82rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.name)}</div>
         <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
           <span class="badge ${CAT_CLS[r.cat]||''}" style="font-size:.58rem">${r.cat}</span>
           ${hcapBadge}
-          ${r.teamName ? `<span style="font-size:.6rem;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">· ${r.teamName}</span>` : ''}
+          ${r.teamName ? `<span style="font-size:.6rem;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">· ${esc(r.teamName)}</span>` : ''}
         </div>
       </div>
       <div style="text-align:right;min-width:60px">
@@ -9154,7 +9222,7 @@ function catColor2(cat) {
 
 // ── TOURNAMENT EDIT ───────────────────────────────────────────────────
 function openTournamentEdit(tId) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!isAdmin()) return;
   const counts = t.countsForAvg !== false; // default true
   const showPts = (t.mode==='equipo'||t.mode==='trio'||t.mode==='sexteto');
@@ -9162,7 +9230,7 @@ function openTournamentEdit(tId) {
   const showZfPts = t.mode!=='sexteto' && (t.format==='suma+zona'||t.format==='suma+repechaje+zona');
   const teamLbl = t.mode==='trio'?'trío':t.mode==='sexteto'?'sexteto':'pareja';
   document.getElementById('mr-body').innerHTML = `
-    <div class="field"><label class="label">Nombre</label><input class="input" id="te-name" value="${t.name}"></div>
+    <div class="field"><label class="label">Nombre</label><input class="input" id="te-name" value="${esc(t.name)}"></div>
     <div class="field"><label class="label">Estado</label>
       <select class="input" id="te-status">
         <option value="pendiente" ${t.status==='pendiente'?'selected':''}>Pendiente</option>
@@ -9245,7 +9313,7 @@ function openTournamentEdit(tId) {
 
 function startSemisFromCuartos(tId) {
   snapshotTournament(tId);
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!isTournamentAdmin()) return;
   const cuartos = (t.bracketRounds||[])[0];
   if(!cuartos) return;
@@ -9266,7 +9334,7 @@ function startSemisFromCuartos(tId) {
 
 function startRepechajeFromCuartos(tId) {
   snapshotTournament(tId);
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!isTournamentAdmin()) return;
   const cuartos = (t.bracketRounds||[])[0];
   if(!cuartos) return;
@@ -9276,7 +9344,7 @@ function startRepechajeFromCuartos(tId) {
 }
 
 function advanceRepechaje(tId) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!isTournamentAdmin()) return;
   const rep = t.repechajeBracket || [];
   if(!rep.length) return;
@@ -9332,11 +9400,11 @@ function buildRepechajeTab(t) {
       const ptsLabelB = showPts ? `<span style="font-size:.6rem;color:#f59e0b;margin-left:4px;font-weight:700">${m.ptsB%1?m.ptsB.toFixed(1):m.ptsB}pts</span>` : '';
       return `<div class="bracket-match" ${click} style="${clickable?'cursor:pointer':''}">
         <div class="bracket-slot ${clsA}">
-          <span>${nameA}</span>
+          <span>${esc(nameA)}</span>
           <span class="slot-score">${m.palosA != null ? m.palosA : ''}${ptsLabelA}${msDetailA}</span>
         </div>
         <div class="bracket-slot ${clsB}">
-          <span>${nameB}</span>
+          <span>${esc(nameB)}</span>
           <span class="slot-score">${m.palosB != null ? m.palosB : ''}${ptsLabelB}${msDetailB}</span>
         </div>
       </div>`;
@@ -9409,7 +9477,7 @@ function bindRepechajeTab(t) {
 
 function openRepechajeMatchView(tId, ri, matchId) {
   if(isTournamentAdmin()) return openDynBracketMatch(tId, ri, matchId, 'repechajeBracket');
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   const round = (t?.repechajeBracket||[])[parseInt(ri)];
   const m = round?.matches?.find(x=>x.id===matchId);
   if(!m || m.palosA == null) return;
@@ -9418,7 +9486,7 @@ function openRepechajeMatchView(tId, ri, matchId) {
 }
 
 function resetRepechaje(tId) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!isTournamentAdmin()) return;
   appConfirm('¿Resetear todo el repechaje?').then(ok => {
     if(!ok) return;
@@ -9428,7 +9496,7 @@ function resetRepechaje(tId) {
 }
 
 function startZonaFinalRepechaje(tId) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!isTournamentAdmin()) return;
   const rounds = t.bracketRounds||[];
   if(rounds.length < 2) { toast('Necesitás completar las semifinales','err'); return; }
@@ -9459,7 +9527,7 @@ function startZonaFinalRepechaje(tId) {
 
 // ── ZONA FINAL (suma+zona) ────────────────────────────────────────────
 function startZonaFinalFromBracket(tId) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!isTournamentAdmin()) return;
   const rounds = t.bracketRounds||[];
   if(!rounds.length) { toast('No hay pica-pica iniciado','err'); return; }
@@ -9473,7 +9541,7 @@ function startZonaFinalFromBracket(tId) {
 }
 
 function startZonaFinalFromSuma(tId) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!isTournamentAdmin()) return;
   const clsN = t.clasificadosZonaFinal || 4;
   const ms = t.sumaPalosMember || {};
@@ -9509,7 +9577,7 @@ function _createZonaFinal(t, teamIds) {
 }
 
 function openEditSumaZonaClasif(tId) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!isTournamentAdmin()) return;
   const teamLabel = t.mode==='trio'?'tríos':'parejas';
   document.getElementById('mr-body').innerHTML = `
@@ -9629,7 +9697,7 @@ function buildZonaFinalIndividual(t) {
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
         <span class="${posClass}" style="font-family:'Bebas Neue',cursive;font-size:1rem;min-width:22px;text-align:right">${idx+1}</span>
         <div style="flex:1;min-width:0">
-          <div style="font-weight:700;font-size:.88rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.name}</div>
+          <div style="font-weight:700;font-size:.88rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.name)}</div>
           <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">
             <span class="badge ${CAT_CLS[r.cat]||''}" style="font-size:.55rem">${r.cat}</span>
             ${hcapBadge}
@@ -9661,7 +9729,7 @@ function buildZonaFinalIndividual(t) {
 
 function zfiUpdate(el) {
   const { tid, pid, li, accum, hcap } = el.dataset;
-  const t = (DB.tournaments||[]).find(x=>x.id===tid);
+  const t = getTournament(tid);
   if(!t||!t.zonaFinal) return;
   if(!t.zonaFinal.scores) t.zonaFinal.scores = {};
   if(!t.zonaFinal.scores[pid]) t.zonaFinal.scores[pid] = [];
@@ -9677,7 +9745,7 @@ function zfiUpdate(el) {
 
 function zfiAutoFill(tId) {
   snapshotTournament(tId);
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!t.zonaFinal||!isTournamentAdmin()) return;
   const zf = t.zonaFinal;
   if(!zf.scores) zf.scores = {};
@@ -9693,7 +9761,7 @@ function zfiAutoFill(tId) {
 }
 
 function zfiEditLineas(tId) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!t.zonaFinal||!isTournamentAdmin()) return;
   const zf = t.zonaFinal;
   document.getElementById('mr-body').innerHTML = `
@@ -9828,14 +9896,14 @@ function bindZonaFinalTab(t) {
 }
 
 function openZonaFinalMatch(tId, preA, preB) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!t.zonaFinal||!isTournamentAdmin()) return;
   openZoneRRMatch(tId, t.zonaFinal.id, preA, preB);
 }
 
 function autoFillZonaFinal(tId) {
   snapshotTournament(tId);
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!t.zonaFinal||!isTournamentAdmin()) return;
 
   const zf = t.zonaFinal;
@@ -9883,7 +9951,7 @@ function autoFillZonaFinal(tId) {
 }
 
 function openCreateZonaFinal(tId) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!isTournamentAdmin()) return;
 
   const isIndividual = t.mode === 'individual';
@@ -9916,14 +9984,14 @@ function openCreateZonaFinal(tId) {
 }
 
 function resetZonaFinal(tId) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!isTournamentAdmin()) return;
   t.zonaFinal = null;
   save(); renderTournamentDetail(); toast('🔄 Zona final reseteada');
 }
 
 function openZonaFinalArrastre(tId, phIdx) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!isTournamentAdmin()) return;
 
   const ranked = getArrastreRanking(t);
@@ -9935,7 +10003,7 @@ function openZonaFinalArrastre(tId, phIdx) {
     const el = document.getElementById('zfa-preview');
     if(!el) return;
     el.innerHTML = show.map((r,i) =>
-      `<div style="display:flex;gap:6px;padding:2px 0;${i===n-1?'border-bottom:2px dashed rgba(59,130,246,.4);padding-bottom:4px;margin-bottom:2px':''}"><span style="min-width:20px;color:var(--muted)">${i+1}.</span><span style="flex:1">${r.name}</span><span style="color:var(--accent);font-family:'Bebas Neue',cursive">${r.totalPalos}</span></div>`
+      `<div style="display:flex;gap:6px;padding:2px 0;${i===n-1?'border-bottom:2px dashed rgba(59,130,246,.4);padding-bottom:4px;margin-bottom:2px':''}"><span style="min-width:20px;color:var(--muted)">${i+1}.</span><span style="flex:1">${esc(r.name)}</span><span style="color:var(--accent);font-family:'Bebas Neue',cursive">${r.totalPalos}</span></div>`
     ).join('') + (n < ranked.length ? `<div style="color:#f87171;padding-top:4px;font-size:.62rem">— ${ranked.length - n} no pasan a la final —</div>` : '');
   };
 
@@ -9964,7 +10032,7 @@ function openZonaFinalArrastre(tId, phIdx) {
 }
 
 function startZonaFinalFromFase(tId, phIdx) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!isTournamentAdmin()) return;
   const ph = (t.phases||[])[phIdx];
   if(!ph) return;
@@ -10057,7 +10125,7 @@ function buildLigaGruposTab(t) {
 }
 
 function lgCreateGroups(tId) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t) return;
   if(!t.ligaGrupos) t.ligaGrupos = {};
   t.ligaGrupos.grupos = 'ABCDEF'.split('').map(name => ({id:genId(), name, members:[]}));
@@ -10065,7 +10133,7 @@ function lgCreateGroups(tId) {
 }
 
 function lgResetGroups(tId) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!confirm('¿Resetear grupos y fixture?')) return;
   t.ligaGrupos.grupos = [];
   t.ligaGrupos.fechas = [];
@@ -10073,7 +10141,7 @@ function lgResetGroups(tId) {
 }
 
 function lgAddToGroup(tId, gi, pid) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t||!pid) return;
   const g = t.ligaGrupos.grupos[gi];
   if(!g || (g.members||[]).length >= 4) return;
@@ -10083,7 +10151,7 @@ function lgAddToGroup(tId, gi, pid) {
 }
 
 function lgRemoveFromGroup(tId, gi, pid) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t) return;
   const g = t.ligaGrupos.grupos[gi];
   if(!g) return;
@@ -10092,7 +10160,7 @@ function lgRemoveFromGroup(tId, gi, pid) {
 }
 
 function lgGenerateFixture(tId) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t) return;
   const lg = t.ligaGrupos;
   const gs = lg.grupos;
@@ -10251,12 +10319,12 @@ function buildLigaFechasTab(t) {
 }
 
 function lgSetFecha(tId, idx) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(t) { t._activeFecha = idx; renderTournamentDetail(); }
 }
 
 function lgSaveLine(tId, fi, mi, side, val) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t) return;
   const m = t.ligaGrupos.fechas[fi]?.matches[mi];
   if(!m) return;
@@ -10266,7 +10334,7 @@ function lgSaveLine(tId, fi, mi, side, val) {
 }
 
 function lgAutoFillFecha(tId, fi) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t) return;
   const fecha = t.ligaGrupos.fechas[fi];
   if(!fecha) return;
@@ -10458,7 +10526,7 @@ function buildLigaBonusTab(t) {
 }
 
 function lgSaveBonusConfig(tId) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t) return;
   const lg = t.ligaGrupos;
 
@@ -10479,7 +10547,7 @@ function lgSaveBonusConfig(tId) {
 }
 
 function lgAddCat(tId) {
-  const t = (DB.tournaments||[]).find(x=>x.id===tId);
+  const t = getTournament(tId);
   if(!t) return;
   const cat = document.getElementById('lg-new-cat')?.value?.trim();
   if(!cat) { toast('Ingresá el nombre de la categoría','err'); return; }
@@ -10580,6 +10648,7 @@ function importBackup() {
 })();
 
 // ── INIT ──────────────────────────────────────────────────────────────
+rebuildTournamentMap();
 renderView();
 </script>
 </body>
