@@ -8490,61 +8490,116 @@ function buildSextPuntajesTab(t) {
   const scores = t.sextScores || {};
   const canEdit = isTournamentAdmin() && t.status !== 'finalizado';
 
-  const teamRows = t.teams.map(team => {
+  // Pre-compute best individual line and best team for highlights
+  let bestIndLine = 0, bestIndPid = null, bestIndTeamId = null;
+  let bestIndTotal = 0, bestIndTotalPid = null, bestIndTotalTeamId = null;
+  let bestTeamTotal = 0, bestTeamId = null;
+
+  const teamsSorted = [...t.teams].sort((a, b) => {
+    const pA = Object.values(scores[a.id]||{}).reduce((s,ls)=>s+(ls||[]).reduce((x,v)=>x+(v||0),0),0);
+    const pB = Object.values(scores[b.id]||{}).reduce((s,ls)=>s+(ls||[]).reduce((x,v)=>x+(v||0),0),0);
+    return pB - pA;
+  });
+
+  teamsSorted.forEach(team => {
     const tScores = scores[team.id] || {};
+    const tTotal = Object.values(tScores).reduce((s,ls)=>s+(ls||[]).reduce((a,v)=>a+(v||0),0),0);
+    if(tTotal > bestTeamTotal) { bestTeamTotal = tTotal; bestTeamId = team.id; }
+    (team.members||[]).forEach(pid => {
+      const pLines = tScores[pid] || [];
+      const pTotal = pLines.reduce((s,v)=>s+(v||0),0);
+      if(pTotal > bestIndTotal) { bestIndTotal = pTotal; bestIndTotalPid = pid; bestIndTotalTeamId = team.id; }
+      pLines.forEach(v => {
+        if((v||0) > bestIndLine) { bestIndLine = v; bestIndPid = pid; bestIndTeamId = team.id; }
+      });
+    });
+  });
+
+  // Highlights banner
+  const highlights = [];
+  if(bestIndLine > 0) {
+    const bp = DB.players.find(x=>x.id===bestIndPid);
+    highlights.push(`<span style="font-size:.68rem;background:rgba(251,146,60,.08);border:1px solid rgba(251,146,60,.3);padding:3px 8px;border-radius:6px;color:#fb923c">🔥 Mejor línea: <strong>${bestIndLine}</strong> — ${esc(bp?.name||'?')}</span>`);
+  }
+  if(bestTeamTotal > 0) {
+    const bt = teamsSorted.find(x=>x.id===bestTeamId);
+    highlights.push(`<span style="font-size:.68rem;background:rgba(134,239,172,.08);border:1px solid rgba(134,239,172,.3);padding:3px 8px;border-radius:6px;color:#86efac">🏅 Mejor equipo: <strong>${bestTeamTotal}</strong> — ${esc(bt?.name||'?')}</span>`);
+  }
+  const highlightsBanner = highlights.length ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">${highlights.join('')}</div>` : '';
+
+  // Build team card helper (shared for both sections)
+  function buildTeamCard(team, showRank, rankIdx) {
+    const tScores = scores[team.id] || {};
+    const teamTotal = Object.values(tScores).reduce((s,ls)=>s+(ls||[]).reduce((a,v)=>a+(v||0),0),0);
+    const isBest = team.id === bestTeamId && bestTeamTotal > 0;
+    const allFilled = (team.members||[]).every(pid => (tScores[pid]||[]).filter(v=>v>0).length === lineas);
+    const borderColor = isBest ? 'rgba(134,239,172,.45)' : 'var(--border)';
+    const colTotals = Array.from({length: lineas}, () => 0);
 
     const memberRows = (team.members || []).map(pid => {
       const p = DB.players.find(x => x.id === pid);
       const name = p ? p.name : '?';
       const pLines = tScores[pid] || [];
       const memberTotal = pLines.reduce((s, v) => s + (v || 0), 0);
+      const isBestPlayer = pid === bestIndTotalPid && team.id === bestIndTotalTeamId && bestIndTotal > 0;
 
       const lineInputs = Array.from({length: lineas}, (_, i) => {
         const val = pLines[i] > 0 ? pLines[i] : '';
+        const numVal = val || 0;
+        if(i < lineas) colTotals[i] += numVal;
+        const isBestLine = numVal > 0 && numVal === bestIndLine && pid === bestIndPid && team.id === bestIndTeamId;
         const inputId = `sext-${team.id}-${pid}-${i}`;
         return `<div style="display:flex;flex-direction:column;align-items:center;gap:2px">
           <span style="font-size:.52rem;color:var(--muted)">L${i+1}</span>
           ${canEdit
             ? `<input class="input sext-line" type="number" min="0" max="999"
-                id="${inputId}"
-                data-tid="${t.id}" data-teamid="${team.id}" data-pid="${pid}" data-idx="${i}"
+                id="${inputId}" data-tid="${t.id}" data-teamid="${team.id}" data-pid="${pid}" data-idx="${i}"
                 value="${val}" placeholder="—"
-                style="width:46px;text-align:center;font-family:'Bebas Neue',cursive;font-size:1rem;padding:4px 2px"
+                style="width:46px;text-align:center;font-family:'Bebas Neue',cursive;font-size:1rem;padding:4px 2px;${isBestLine?'border-color:#fb923c;background:rgba(251,146,60,.1)':''}"
                 oninput="sextUpdateLine(this)">`
-            : `<span style="font-family:'Bebas Neue',cursive;font-size:1rem;width:46px;text-align:center;display:inline-block;color:${val?'var(--text)':'var(--muted)'}">${val||'—'}</span>`
+            : `<span style="font-family:'Bebas Neue',cursive;font-size:1rem;width:46px;text-align:center;display:inline-block;${isBestLine?'color:#fb923c;font-weight:700':(val?'color:var(--text)':'color:var(--muted)')}">${val||'—'}</span>`
           }
         </div>`;
       }).join('');
 
       return `<div style="padding:8px 0;border-bottom:1px solid var(--border)">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-          <span style="font-size:.78rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:55%">${name}</span>
-          <span class="sext-mtotal-${team.id}-${pid}" style="font-family:'Bebas Neue',cursive;font-size:1.1rem;color:var(--accent)">${memberTotal || '—'}</span>
+          <span style="font-size:.78rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:55%">${esc(name)}</span>
+          <span class="sext-mtotal-${team.id}-${pid}" style="font-family:'Bebas Neue',cursive;font-size:1.15rem;color:${isBestPlayer?'#fb923c':'var(--accent)'};font-weight:700">${memberTotal || '—'}</span>
         </div>
         <div style="display:flex;gap:5px;flex-wrap:nowrap;overflow-x:auto">${lineInputs}</div>
       </div>`;
     }).join('');
 
-    const teamTotal = Object.values(tScores).reduce((s, ls) => s + (ls||[]).reduce((a,v)=>a+(v||0),0), 0);
-    const allFilled = (team.members||[]).every(pid => (tScores[pid]||[]).filter(v=>v>0).length === lineas);
+    const colTotalSlots = colTotals.map(ct =>
+      `<div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+        <span style="font-family:'Bebas Neue',cursive;font-size:.88rem;width:46px;text-align:center;display:inline-block;color:var(--muted)">${ct||'—'}</span>
+      </div>`
+    ).join('');
+    const totalsRow = `<div style="padding:8px 0 2px;display:flex;align-items:center;justify-content:space-between">
+      <span style="font-size:.65rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.5px">Total</span>
+      <div style="display:flex;gap:5px">${colTotalSlots}</div>
+    </div>`;
 
-    return `<div class="sext-card" data-teamid="${team.id}" style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:12px">
+    return `<div class="sext-card" data-teamid="${team.id}" style="background:var(--card);border:1.5px solid ${borderColor};border-radius:12px;padding:12px 14px;margin-bottom:12px${isBest?';box-shadow:0 0 12px rgba(134,239,172,.1)':''}">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-        <span style="font-family:'Bebas Neue',cursive;font-size:1rem;color:#60a5fa">6️⃣</span>
+        ${showRank ? `<span style="font-family:'Bebas Neue',cursive;font-size:1rem;color:var(--muted);min-width:22px;text-align:right">${rankIdx+1}</span>` : `<span style="font-family:'Bebas Neue',cursive;font-size:1rem;color:#60a5fa">6️⃣</span>`}
         <span style="font-weight:700;font-size:.95rem;flex:1">${esc(team.name)}</span>
+        ${isBest ? `<span style="font-size:.58rem;color:#86efac;border:1px solid rgba(134,239,172,.3);padding:1px 6px;border-radius:5px">🏅 Mejor</span>` : ''}
         ${allFilled ? `<span style="font-size:.6rem;color:#86efac;border:1px solid rgba(134,239,172,.25);padding:1px 7px;border-radius:5px">✓</span>` : ''}
-        <span class="sext-teamtotal-${team.id}" style="font-family:'Bebas Neue',cursive;font-size:1.5rem;color:var(--accent)">${teamTotal || '—'}</span>
+        <span class="sext-teamtotal-${team.id}" style="font-family:'Bebas Neue',cursive;font-size:1.5rem;color:${isBest?'#86efac':'var(--accent)'}">${teamTotal || '—'}</span>
       </div>
       ${memberRows}
+      ${totalsRow}
     </div>`;
-  }).join('');
+  }
 
-  // ── Ranking por palos totales ─────────────────────────────────────────
-  const ranked = (t.teams||[]).map(team => {
+  // ── Ranking por palos totales
+  const ranked = teamsSorted.map(team => {
     const tScores = scores[team.id] || {};
     const palos = Object.values(tScores).reduce((s, ls) => s + (ls||[]).reduce((a,v)=>a+(v||0),0), 0);
     return { name: team.name, palos, id: team.id };
-  }).filter(r => r.palos > 0).sort((a,b) => b.palos - a.palos || (a.hcap||0)-(b.hcap||0) || (a.spread||0)-(b.spread||0));
+  }).filter(r => r.palos > 0).sort((a,b) => b.palos - a.palos);
 
   let champHtml = '';
   if(ranked.length) {
@@ -8564,7 +8619,7 @@ function buildSextPuntajesTab(t) {
     champHtml = `<div style="text-align:center;padding:20px;background:rgba(59,130,246,.06);border:1px solid rgba(59,130,246,.2);border-radius:14px;margin-bottom:14px">
       <div style="font-size:2rem;margin-bottom:6px">🏆</div>
       <div style="font-family:'Bebas Neue',cursive;font-size:1.7rem;color:var(--accent);letter-spacing:2px">CAMPEÓN</div>
-      <div style="font-size:1.05rem;font-weight:700;margin-top:4px">${champ.name}</div>
+      <div style="font-size:1.05rem;font-weight:700;margin-top:4px">${esc(champ.name)}</div>
       <div style="font-size:.72rem;color:var(--muted);margin-top:4px">${champ.palos.toLocaleString()} palos totales</div>
     </div>
     <div style="margin-bottom:14px">
@@ -8573,57 +8628,11 @@ function buildSextPuntajesTab(t) {
     </div>`;
   }
 
-  // Sort team cards by palos (best first)
-  const teamsSorted = [...t.teams].sort((a, b) => {
-    const pA = Object.values(scores[a.id]||{}).reduce((s,ls)=>s+(ls||[]).reduce((x,v)=>x+(v||0),0),0);
-    const pB = Object.values(scores[b.id]||{}).reduce((s,ls)=>s+(ls||[]).reduce((x,v)=>x+(v||0),0),0);
-    return pB - pA;
-  });
-  const sortedTeamCards = teamsSorted.map(team => {
-    const tScores = scores[team.id] || {};
-    const memberRows2 = (team.members || []).map(pid => {
-      const p = DB.players.find(x => x.id === pid);
-      const name = p ? p.name : '?';
-      const pLines = tScores[pid] || [];
-      const memberTotal = pLines.reduce((s, v) => s + (v || 0), 0);
-      const lineInputs = Array.from({length: lineas}, (_, i) => {
-        const val = pLines[i] > 0 ? pLines[i] : '';
-        const inputId = `sext-${team.id}-${pid}-${i}`;
-        return `<div style="display:flex;flex-direction:column;align-items:center;gap:2px">
-          <span style="font-size:.52rem;color:var(--muted)">L${i+1}</span>
-          ${canEdit
-            ? `<input class="input sext-line" type="number" min="0" max="999"
-                id="${inputId}" data-tid="${t.id}" data-teamid="${team.id}" data-pid="${pid}" data-idx="${i}"
-                value="${val}" placeholder="—"
-                style="width:46px;text-align:center;font-family:'Bebas Neue',cursive;font-size:1rem;padding:4px 2px"
-                oninput="sextUpdateLine(this)">`
-            : `<span style="font-family:'Bebas Neue',cursive;font-size:1rem;width:46px;text-align:center;display:inline-block;color:${val?'var(--text)':'var(--muted)'}">${val||'—'}</span>`
-          }
-        </div>`;
-      }).join('');
-      return `<div style="padding:8px 0;border-bottom:1px solid var(--border)">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-          <span style="font-size:.78rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:55%">${name}</span>
-          <span class="sext-mtotal-${team.id}-${pid}" style="font-family:'Bebas Neue',cursive;font-size:1.1rem;color:var(--accent)">${memberTotal || '—'}</span>
-        </div>
-        <div style="display:flex;gap:5px;flex-wrap:nowrap;overflow-x:auto">${lineInputs}</div>
-      </div>`;
-    }).join('');
-    const teamTotal = Object.values(tScores).reduce((s, ls) => s + (ls||[]).reduce((a,v)=>a+(v||0),0), 0);
-    const allFilled = (team.members||[]).every(pid => (tScores[pid]||[]).filter(v=>v>0).length === lineas);
-    return `<div class="sext-card" data-teamid="${team.id}" style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:12px">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-        <span style="font-family:'Bebas Neue',cursive;font-size:1rem;color:#60a5fa">6️⃣</span>
-        <span style="font-weight:700;font-size:.95rem;flex:1">${esc(team.name)}</span>
-        ${allFilled ? `<span style="font-size:.6rem;color:#86efac;border:1px solid rgba(134,239,172,.25);padding:1px 7px;border-radius:5px">✓</span>` : ''}
-        <span class="sext-teamtotal-${team.id}" style="font-family:'Bebas Neue',cursive;font-size:1.5rem;color:var(--accent)">${teamTotal || '—'}</span>
-      </div>
-      ${memberRows2}
-    </div>`;
-  }).join('');
+  const sortedTeamCards = teamsSorted.map((team, idx) => buildTeamCard(team, true, idx)).join('');
 
   return `<div>
     ${champHtml}
+    ${highlightsBanner}
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
       <div style="flex:1;font-size:.7rem;color:var(--muted)">${lineas} línea${lineas!==1?'s':''} por jugador · ${t.teams.length} sexteto${t.teams.length!==1?'s':''}</div>
       ${canEdit ? `<button class="btn btn-ghost btn-sm" onclick="sextAutoFill('${t.id}')">🎲 Auto-completar</button>` : ''}
@@ -8682,19 +8691,18 @@ function sextAutoFill(tId) {
 // ── SUMA PALOS + BRACKET TAB ──────────────────────────────────────────
 function buildSumaPalosTab(t) {
   if(!t.teams || !t.teams.length) {
-    const teamLabel = t.mode==='trio'?'tríos':'parejas';
+    const teamLabel = teamModeLabel(t.mode);
     return `<div class="empty"><div class="empty-icon">🎳</div><div class="empty-title">Sin ${teamLabel} configurados</div><div class="empty-sub">Agregá los ${teamLabel} en la pestaña anterior</div></div>`;
   }
 
   const canEdit = isTournamentAdmin() && t.status !== 'finalizado';
-  const teamLabel = t.mode==='trio'?'tríos':'parejas';
+  const tLabel = teamModeLabel(t.mode);
   const isSumaZona = t.format === 'suma+zona' || t.format === 'suma+repechaje+zona';
   const isRepFmt = t.format === 'suma+repechaje+zona';
   const clsN = isRepFmt ? (t.clasificadosMataMata || 16) : (isSumaZona ? t.clasificadosZonaFinal : t.clasificadosMataMata) || (isSumaZona ? 4 : 8);
   const lineas = t.sumaLineasPorJugador || 3;
   if(!t.sumaPalosMember) t.sumaPalosMember = {};
 
-  // Calculate team totals from member scores
   function teamTotal(teamId, members) {
     const ms = t.sumaPalosMember[teamId] || {};
     let sum = 0;
@@ -8707,13 +8715,39 @@ function buildSumaPalosTab(t) {
     return sum;
   }
 
-  // Ranked teams
   const ranked = [...t.teams].map(team => {
     const total = teamTotal(team.id, team.members);
     return { id: team.id, name: team.name, members: team.members||[], total };
   }).sort((a,b) => b.total - a.total);
 
-  // Classification banner
+  // Find best individual line and best team total for highlights
+  let bestIndLine = 0;
+  let bestIndPid = null;
+  let bestIndTeamId = null;
+  let bestTeamTotal = 0;
+  let bestTeamId = null;
+  ranked.forEach(r => {
+    if(r.total > bestTeamTotal) { bestTeamTotal = r.total; bestTeamId = r.id; }
+    const ms = t.sumaPalosMember[r.id] || {};
+    (r.members||[]).forEach(pid => {
+      (ms[pid]||[]).forEach(v => {
+        if((v||0) > bestIndLine) { bestIndLine = v; bestIndPid = pid; bestIndTeamId = r.id; }
+      });
+    });
+  });
+
+  // Best individual total (sum of a single player's lines)
+  let bestIndTotal = 0;
+  let bestIndTotalPid = null;
+  let bestIndTotalTeamId = null;
+  ranked.forEach(r => {
+    const ms = t.sumaPalosMember[r.id] || {};
+    (r.members||[]).forEach(pid => {
+      const pT = (ms[pid]||[]).reduce((s,v)=>s+(v||0),0);
+      if(pT > bestIndTotal) { bestIndTotal = pT; bestIndTotalPid = pid; bestIndTotalTeamId = r.id; }
+    });
+  });
+
   const clsTeams = ranked.filter(r=>r.total>0).slice(0, clsN);
   const hasNoBracket = !(t.bracketRounds||[]).length;
   const pendingNext = hasNoBracket && clsTeams.length >= 2;
@@ -8729,14 +8763,28 @@ function buildSumaPalosTab(t) {
       ${canEdit ? `<button class="btn btn-ghost btn-sm" onclick="${editFn}('${t.id}')">⚙️ Cambiar cantidad (${clsN})</button>` : ''}
     </div>` : '';
 
-  // Team cards with individual member lines
+  // Highlights banner
+  const highlights = [];
+  if(bestIndLine > 0) {
+    const bp = DB.players.find(x=>x.id===bestIndPid);
+    highlights.push(`<span style="font-size:.68rem;background:rgba(251,146,60,.08);border:1px solid rgba(251,146,60,.3);padding:3px 8px;border-radius:6px;color:#fb923c">🔥 Mejor línea: <strong>${bestIndLine}</strong> — ${esc(bp?.name||'?')}</span>`);
+  }
+  if(bestTeamTotal > 0) {
+    const bt = ranked.find(r=>r.id===bestTeamId);
+    highlights.push(`<span style="font-size:.68rem;background:rgba(134,239,172,.08);border:1px solid rgba(134,239,172,.3);padding:3px 8px;border-radius:6px;color:#86efac">🏅 Mejor equipo: <strong>${bestTeamTotal}</strong> — ${esc(bt?.name||'?')}</span>`);
+  }
+  const highlightsBanner = highlights.length ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">${highlights.join('')}</div>` : '';
+
   const teamCards = ranked.map((r, idx) => {
     const team = t.teams.find(x=>x.id===r.id);
     const ms = t.sumaPalosMember[r.id] || {};
     const isClassified = idx < clsN && r.total > 0;
-    const borderColor = isClassified ? 'rgba(56,189,248,.35)' : 'var(--border)';
+    const isBestTeam = r.id === bestTeamId && bestTeamTotal > 0;
+    const borderColor = isBestTeam ? 'rgba(134,239,172,.45)' : isClassified ? 'rgba(56,189,248,.35)' : 'var(--border)';
 
-    // Member rows
+    // Collect per-line column totals
+    const colTotals = Array.from({length: lineas}, () => 0);
+
     const memberRows = (team.members||[]).map(pid => {
       const p = DB.players.find(x=>x.id===pid);
       const pName = p ? p.name : '?';
@@ -8745,17 +8793,21 @@ function buildSumaPalosTab(t) {
       const cat = p ? p.cat : '?';
       const pLines = ms[pid] || [];
       const pTotal = pLines.reduce((s,v)=>s+(v||0), 0);
+      const isBestPlayer = pid === bestIndTotalPid && r.id === bestIndTotalTeamId && bestIndTotal > 0;
 
       const lineSlots = Array.from({length: Math.max(lineas, pLines.length)}, (_, li) => {
         const val = pLines[li] || 0;
+        if(li < lineas) colTotals[li] += (val||0);
+        const isBest = val > 0 && val === bestIndLine && pid === bestIndPid && r.id === bestIndTeamId;
         if(canEdit) {
           return `<input class="input sp-member-line" type="number" min="0" max="300"
             data-tid="${t.id}" data-teamid="${r.id}" data-pid="${pid}" data-li="${li}"
             value="${val||''}" placeholder="—"
-            style="width:48px;text-align:center;font-family:'Bebas Neue',cursive;font-size:.95rem;padding:3px 2px"
+            style="width:48px;text-align:center;font-family:'Bebas Neue',cursive;font-size:.95rem;padding:3px 2px;${isBest?'border-color:#fb923c;background:rgba(251,146,60,.1)':''}"
             oninput="spMemberUpdate(this)">`;
         } else {
-          return `<span style="font-family:'Bebas Neue',cursive;font-size:.95rem;width:48px;text-align:center;display:inline-block;color:${val?'var(--text)':'var(--muted)'}">${val||'—'}</span>`;
+          const bestStyle = isBest ? 'color:#fb923c;font-weight:700' : (val?'color:var(--text)':'color:var(--muted)');
+          return `<span style="font-family:'Bebas Neue',cursive;font-size:.95rem;width:48px;text-align:center;display:inline-block;${bestStyle}">${val||'—'}</span>`;
         }
       }).join('');
 
@@ -8764,20 +8816,31 @@ function buildSumaPalosTab(t) {
           <span class="badge ${CAT_CLS[cat]||''}" style="font-size:.48rem;padding:1px 4px">${cat}</span>
           <span style="font-size:.76rem;font-weight:600">${esc(pName)}</span>
           ${hcBadge}
-          <span class="sp-m-total-${r.id}-${pid}" style="margin-left:auto;font-family:'Bebas Neue',cursive;font-size:.9rem;color:var(--accent);flex-shrink:0">${pTotal||'—'}</span>
+          <span class="sp-m-total-${r.id}-${pid}" style="margin-left:auto;font-family:'Bebas Neue',cursive;font-size:1.15rem;color:${isBestPlayer?'#fb923c':'var(--accent)'};flex-shrink:0;font-weight:700">${pTotal||'—'}</span>
         </div>
         <div style="display:flex;gap:3px">${lineSlots}</div>
       </div>`;
     }).join('');
 
-    return `<div style="background:var(--card);border:1.5px solid ${borderColor};border-radius:12px;padding:11px 13px;margin-bottom:10px">
+    // Team totals row per column
+    const colTotalSlots = colTotals.map(ct =>
+      `<span style="font-family:'Bebas Neue',cursive;font-size:.88rem;width:48px;text-align:center;display:inline-block;color:var(--muted)">${ct||'—'}</span>`
+    ).join('');
+    const totalsRow = `<div style="padding:8px 0 2px;display:flex;align-items:center;gap:4px">
+      <span style="font-size:.65rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.5px">Total</span>
+      <div style="display:flex;gap:3px;margin-left:auto">${colTotalSlots}</div>
+    </div>`;
+
+    return `<div style="background:var(--card);border:1.5px solid ${borderColor};border-radius:12px;padding:11px 13px;margin-bottom:10px${isBestTeam?';box-shadow:0 0 12px rgba(134,239,172,.1)':''}">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
         <span style="font-family:'Bebas Neue',cursive;font-size:1rem;color:var(--muted);min-width:22px;text-align:right">${idx+1}</span>
         <span style="font-weight:700;font-size:.9rem;flex:1">${esc(r.name)}</span>
+        ${isBestTeam ? `<span style="font-size:.58rem;color:#86efac;border:1px solid rgba(134,239,172,.3);padding:1px 6px;border-radius:5px">🏅 Mejor</span>` : ''}
         ${isClassified ? `<span style="font-size:.58rem;color:#38bdf8;border:1px solid rgba(56,189,248,.3);padding:1px 6px;border-radius:5px">Top ${clsN}</span>` : ''}
-        <span class="sp-team-total-${r.id}" style="font-family:'Bebas Neue',cursive;font-size:1.5rem;color:var(--accent)">${r.total||'—'}</span>
+        <span class="sp-team-total-${r.id}" style="font-family:'Bebas Neue',cursive;font-size:1.5rem;color:${isBestTeam?'#86efac':'var(--accent)'}">${r.total||'—'}</span>
       </div>
       ${memberRows}
+      ${totalsRow}
     </div>`;
   }).join('');
 
@@ -8786,8 +8849,9 @@ function buildSumaPalosTab(t) {
 
   return `<div>
     ${clsBanner}
+    ${highlightsBanner}
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
-      <div style="flex:1;font-size:.7rem;color:var(--muted)">${t.teams.length} ${teamLabel} · ${lineas} línea${lineas!==1?'s':''}/jugador · clasifican top ${clsN} al pica-pica</div>
+      <div style="flex:1;font-size:.7rem;color:var(--muted)">${t.teams.length} ${tLabel} · ${lineas} línea${lineas!==1?'s':''}/jugador · clasifican top ${clsN} al pica-pica</div>
       ${lineasBtn}${autoBtn}
     </div>
     ${teamCards}
