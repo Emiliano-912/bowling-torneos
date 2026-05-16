@@ -7822,12 +7822,14 @@ function buildBracketTab(t) {
       actionHtml = `<div style="margin-top:6px;font-size:.62rem;color:#86efac">✓ Ronda completada</div>`;
     }
 
-    const lineasLabel = (round.lineasPorJugador && round.lineasPorJugador > 1) ? ` <span style="font-size:.52rem;color:var(--accent);font-family:'Nunito',sans-serif">(${round.lineasPorJugador}L)</span>` : '';
+    const rLineas = round.lineasPorJugador || 1;
+    const lineasLabel = rLineas > 1 ? ` <span style="font-size:.52rem;color:var(--accent);font-family:'Nunito',sans-serif">(${rLineas}L)</span>` : '';
+    const editLineasBtn = isTournamentAdmin() && !round.locked ? `<button class="btn btn-ghost btn-sm" style="padding:1px 6px;font-size:.55rem;margin-left:4px" onclick="event.stopPropagation();openEditRoundLineas('${t.id}',${ri},'bracketRounds')" title="Cambiar líneas">📏 ${rLineas}L</button>` : '';
     const deleteRoundBtn = isTournamentAdmin() && rounds.length > 1
       ? `<button class="btn btn-danger btn-sm" style="padding:2px 8px;font-size:.65rem;margin-top:4px;display:block" onclick="event.stopPropagation();deleteBracketRound('${t.id}',${ri})">🗑 Eliminar</button>`
       : '';
     return `<div class="bracket-round">
-      <div class="bracket-round-title">${round.name}${lineasLabel}</div>
+      <div class="bracket-round-title">${round.name}${lineasLabel}${editLineasBtn}</div>
       ${matchCards}
       ${actionHtml}
       ${deleteRoundBtn}
@@ -7976,6 +7978,30 @@ function openCreateRound(tId, available, roundIdx, opts) {
   };
   openModal('modal-match-result');
   setTimeout(()=>document.getElementById('cr-name')?.select(), 200);
+}
+
+function openEditRoundLineas(tId, ri, bracketKey) {
+  const t = getTournament(tId);
+  if(!t||!isTournamentAdmin()) return;
+  const rounds = t[bracketKey] || [];
+  const round = rounds[ri];
+  if(!round) return;
+  const current = round.lineasPorJugador || 1;
+  document.getElementById('mr-body').innerHTML = `
+    <div style="font-weight:700;font-size:.88rem;margin-bottom:10px">📏 Líneas por jugador — ${esc(round.name)}</div>
+    <div style="font-size:.72rem;color:var(--muted);margin-bottom:12px">Cada jugador carga esta cantidad de líneas en los partidos de esta ronda.</div>
+    <div class="field">
+      <input class="input" id="erl-val" type="number" min="1" max="10" value="${current}"
+        style="text-align:center;font-family:'Bebas Neue',cursive;font-size:2rem;width:100px">
+    </div>`;
+  document.getElementById('mr-submit').textContent = 'Guardar';
+  document.getElementById('mr-submit').onclick = () => {
+    const val = Math.max(1, Math.min(10, parseInt(document.getElementById('erl-val').value)||1));
+    round.lineasPorJugador = val;
+    save(); closeModal('modal-match-result'); renderTournamentDetail();
+    toast(`✓ ${esc(round.name)}: ${val} línea${val!==1?'s':''} por jugador`);
+  };
+  openModal('modal-match-result');
 }
 
 // ── Match view router ─────────────────────────────────────────────────
@@ -9525,9 +9551,11 @@ function buildRepechajeTab(t) {
       actionHtml = `<div style="margin-top:6px;font-size:.62rem;color:#86efac">✓ Ronda completada</div>`;
     }
 
-    const lineasLabel = (round.lineasPorJugador && round.lineasPorJugador > 1) ? ` <span style="font-size:.52rem;color:#f59e0b;font-family:'Nunito',sans-serif">(${round.lineasPorJugador}L)</span>` : '';
+    const rLineas = round.lineasPorJugador || 1;
+    const lineasLabel = rLineas > 1 ? ` <span style="font-size:.52rem;color:#f59e0b;font-family:'Nunito',sans-serif">(${rLineas}L)</span>` : '';
+    const editLineasBtn = isTournamentAdmin() && !round.locked ? `<button class="btn btn-ghost btn-sm" style="padding:1px 6px;font-size:.55rem;margin-left:4px" onclick="event.stopPropagation();openEditRoundLineas('${t.id}',${ri},'repechajeBracket')" title="Cambiar líneas">📏 ${rLineas}L</button>` : '';
     return `<div class="bracket-round">
-      <div class="bracket-round-title" style="color:#f59e0b;border-bottom-color:rgba(245,158,11,.3)">${round.name}${lineasLabel}</div>
+      <div class="bracket-round-title" style="color:#f59e0b;border-bottom-color:rgba(245,158,11,.3)">${round.name}${lineasLabel}${editLineasBtn}</div>
       ${matchCards}
       ${actionHtml}
     </div>`;
