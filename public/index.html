@@ -8571,13 +8571,17 @@ function buildSextPuntajesTab(t) {
       </div>`;
     }).join('');
 
+    const teamTotalSum = colTotals.reduce((s,v)=>s+v, 0);
     const colTotalSlots = colTotals.map(ct =>
       `<div style="display:flex;flex-direction:column;align-items:center;gap:2px">
-        <span style="font-family:'Bebas Neue',cursive;font-size:.88rem;width:46px;text-align:center;display:inline-block;color:var(--muted)">${ct||'—'}</span>
+        <span style="font-family:'Bebas Neue',cursive;font-size:1.15rem;font-weight:700;width:46px;text-align:center;display:inline-block;color:var(--text)">${ct||'—'}</span>
       </div>`
     ).join('');
-    const totalsRow = `<div style="padding:8px 0 2px;display:flex;align-items:center;justify-content:space-between">
-      <span style="font-size:.65rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.5px">Total</span>
+    const totalsRow = `<div style="padding:10px 0 4px;border-top:2px solid var(--border2);margin-top:4px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px">
+        <span style="font-size:.65rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.5px">Total equipo</span>
+        <span style="font-family:'Bebas Neue',cursive;font-size:1.3rem;color:var(--accent);font-weight:700">${teamTotalSum||'—'}</span>
+      </div>
       <div style="display:flex;gap:5px">${colTotalSlots}</div>
     </div>`;
 
@@ -8823,12 +8827,16 @@ function buildSumaPalosTab(t) {
     }).join('');
 
     // Team totals row per column
+    const teamTotalSum = colTotals.reduce((s,v)=>s+v, 0);
     const colTotalSlots = colTotals.map(ct =>
-      `<span style="font-family:'Bebas Neue',cursive;font-size:.88rem;width:48px;text-align:center;display:inline-block;color:var(--muted)">${ct||'—'}</span>`
+      `<span style="font-family:'Bebas Neue',cursive;font-size:1.15rem;font-weight:700;width:48px;text-align:center;display:inline-block;color:var(--text)">${ct||'—'}</span>`
     ).join('');
-    const totalsRow = `<div style="padding:8px 0 2px;display:flex;align-items:center;gap:4px">
-      <span style="font-size:.65rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.5px">Total</span>
-      <div style="display:flex;gap:3px;margin-left:auto">${colTotalSlots}</div>
+    const totalsRow = `<div style="padding:10px 0 4px;border-top:2px solid var(--border2);margin-top:4px">
+      <div style="display:flex;align-items:center;gap:4px;margin-bottom:2px">
+        <span style="font-size:.65rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.5px">Total equipo</span>
+        <span style="margin-left:auto;font-family:'Bebas Neue',cursive;font-size:1.3rem;color:var(--accent);font-weight:700">${teamTotalSum||'—'}</span>
+      </div>
+      <div style="display:flex;gap:3px">${colTotalSlots}</div>
     </div>`;
 
     return `<div style="background:var(--card);border:1.5px solid ${borderColor};border-radius:12px;padding:11px 13px;margin-bottom:10px${isBestTeam?';box-shadow:0 0 12px rgba(134,239,172,.1)':''}">
