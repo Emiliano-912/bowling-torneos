@@ -7737,7 +7737,7 @@ function buildBracketTab(t) {
     const isLast  = ri === rounds.length - 1;
     const champion = allDone && round.matches.length === 1 ? getEntryName(t, round.matches[0].winner) : null;
 
-    const matchCards = round.matches.map(m => {
+    const matchCards = round.matches.map((m, mi) => {
       const nameA = m.a ? getEntryName(t, m.a) : '—';
       const nameB = m.b ? getEntryName(t, m.b) : '—';
       const clsA = m.winner === m.a ? 'winner' : m.winner ? 'loser' : '';
@@ -7745,7 +7745,6 @@ function buildBracketTab(t) {
       const hasResult = m.palosA != null || m.palosB != null;
       const clickable = isTournamentAdmin() || hasResult;
       const click = clickable ? `onclick="openBracketMatchView('${t.id}','${ri}','${m.id}')"` : '';
-      // Show individual member scores if available — support nested format
       function flattenMs(ms) {
         if(!ms || !ms.length) return '';
         const vals = ms.map(v => Array.isArray(v) ? v.reduce((s,x)=>s+x,0) : (v||0)).filter(v=>v>0);
@@ -7756,7 +7755,11 @@ function buildBracketTab(t) {
       const showPts = t.bracketWinBy === 'puntos' && m.ptsA != null;
       const ptsLabelA = showPts ? `<span style="font-size:.6rem;color:var(--accent);margin-left:4px;font-weight:700">${m.ptsA%1?m.ptsA.toFixed(1):m.ptsA}pts</span>` : '';
       const ptsLabelB = showPts ? `<span style="font-size:.6rem;color:var(--accent);margin-left:4px;font-weight:700">${m.ptsB%1?m.ptsB.toFixed(1):m.ptsB}pts</span>` : '';
-      return `<div class="bracket-match" ${click} style="${clickable?'cursor:pointer':''}">
+      const canReorder = isTournamentAdmin() && !round.locked && round.matches.length > 1;
+      const moveUp = canReorder && mi > 0 ? `<button class="btn btn-ghost btn-sm" style="padding:1px 4px;font-size:.6rem;line-height:1" onclick="event.stopPropagation();swapBracketMatch('${t.id}',${ri},${mi},${mi-1},'bracketRounds')" title="Subir">▲</button>` : '';
+      const moveDown = canReorder && mi < round.matches.length-1 ? `<button class="btn btn-ghost btn-sm" style="padding:1px 4px;font-size:.6rem;line-height:1" onclick="event.stopPropagation();swapBracketMatch('${t.id}',${ri},${mi},${mi+1},'bracketRounds')" title="Bajar">▼</button>` : '';
+      const reorderBtns = (moveUp||moveDown) ? `<div style="display:flex;flex-direction:column;gap:1px;position:absolute;right:4px;top:50%;transform:translateY(-50%)">${moveUp}${moveDown}</div>` : '';
+      return `<div class="bracket-match" ${click} style="${clickable?'cursor:pointer':''};position:relative">
         <div class="bracket-slot ${clsA}">
           <span>${esc(nameA)}</span>
           <span class="slot-score">${m.palosA != null ? m.palosA : ''}${ptsLabelA}${msDetailA}</span>
@@ -7765,6 +7768,7 @@ function buildBracketTab(t) {
           <span>${esc(nameB)}</span>
           <span class="slot-score">${m.palosB != null ? m.palosB : ''}${ptsLabelB}${msDetailB}</span>
         </div>
+        ${reorderBtns}
       </div>`;
     }).join('');
 
@@ -8002,6 +8006,19 @@ function openEditRoundLineas(tId, ri, bracketKey) {
     toast(`✓ ${esc(round.name)}: ${val} línea${val!==1?'s':''} por jugador`);
   };
   openModal('modal-match-result');
+}
+
+function swapBracketMatch(tId, ri, fromIdx, toIdx, bracketKey) {
+  const t = getTournament(tId);
+  if(!t || !isTournamentAdmin()) return;
+  const rounds = t[bracketKey] || [];
+  const round = rounds[ri];
+  if(!round || round.locked) return;
+  const matches = round.matches;
+  if(fromIdx < 0 || toIdx < 0 || fromIdx >= matches.length || toIdx >= matches.length) return;
+  [matches[fromIdx], matches[toIdx]] = [matches[toIdx], matches[fromIdx]];
+  save();
+  renderTournamentDetail();
 }
 
 // ── Match view router ─────────────────────────────────────────────────
@@ -9505,7 +9522,7 @@ function buildRepechajeTab(t) {
     const isFinal = round.matches.length === 1;
     const champion = allDone && isFinal ? getEntryName(t, round.matches[0].winner) : null;
 
-    const matchCards = round.matches.map(m => {
+    const matchCards = round.matches.map((m, mi) => {
       const nameA = m.a ? getEntryName(t, m.a) : '—';
       const nameB = m.b ? getEntryName(t, m.b) : '—';
       const clsA = m.winner === m.a ? 'winner' : m.winner ? 'loser' : '';
@@ -9523,7 +9540,11 @@ function buildRepechajeTab(t) {
       const showPts = t.bracketWinBy === 'puntos' && m.ptsA != null;
       const ptsLabelA = showPts ? `<span style="font-size:.6rem;color:#f59e0b;margin-left:4px;font-weight:700">${m.ptsA%1?m.ptsA.toFixed(1):m.ptsA}pts</span>` : '';
       const ptsLabelB = showPts ? `<span style="font-size:.6rem;color:#f59e0b;margin-left:4px;font-weight:700">${m.ptsB%1?m.ptsB.toFixed(1):m.ptsB}pts</span>` : '';
-      return `<div class="bracket-match" ${click} style="${clickable?'cursor:pointer':''}">
+      const canReorder = isTournamentAdmin() && !round.locked && round.matches.length > 1;
+      const moveUp = canReorder && mi > 0 ? `<button class="btn btn-ghost btn-sm" style="padding:1px 4px;font-size:.6rem;line-height:1" onclick="event.stopPropagation();swapBracketMatch('${t.id}',${ri},${mi},${mi-1},'repechajeBracket')" title="Subir">▲</button>` : '';
+      const moveDown = canReorder && mi < round.matches.length-1 ? `<button class="btn btn-ghost btn-sm" style="padding:1px 4px;font-size:.6rem;line-height:1" onclick="event.stopPropagation();swapBracketMatch('${t.id}',${ri},${mi},${mi+1},'repechajeBracket')" title="Bajar">▼</button>` : '';
+      const reorderBtns = (moveUp||moveDown) ? `<div style="display:flex;flex-direction:column;gap:1px;position:absolute;right:4px;top:50%;transform:translateY(-50%)">${moveUp}${moveDown}</div>` : '';
+      return `<div class="bracket-match" ${click} style="${clickable?'cursor:pointer':''};position:relative">
         <div class="bracket-slot ${clsA}">
           <span>${esc(nameA)}</span>
           <span class="slot-score">${m.palosA != null ? m.palosA : ''}${ptsLabelA}${msDetailA}</span>
@@ -9532,6 +9553,7 @@ function buildRepechajeTab(t) {
           <span>${esc(nameB)}</span>
           <span class="slot-score">${m.palosB != null ? m.palosB : ''}${ptsLabelB}${msDetailB}</span>
         </div>
+        ${reorderBtns}
       </div>`;
     }).join('');
 
