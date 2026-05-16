@@ -2627,8 +2627,8 @@ function promRenderTable() {
       </td>
       <td>
         <div style="display:flex;flex-direction:column;gap:3px;min-width:72px">
-          <div style="font-size:.68rem;color:var(--muted)"><span style="display:inline-block;width:38px">⬆️ Mejor</span><strong style="color:#86efac;font-family:'Bebas Neue',cursive;font-size:.9rem">${r.best||'—'}</strong></div>
-          <div style="font-size:.68rem;color:var(--muted)"><span style="display:inline-block;width:38px">⬇️ Peor</span><strong style="color:#f87171;font-family:'Bebas Neue',cursive;font-size:.9rem">${r.worst||'—'}</strong></div>
+          <div style="font-size:.68rem;color:var(--muted)"><span style="display:inline-block;width:38px">⬆️ Mejor</span><strong style="color:#86efac;font-family:'Bebas Neue',cursive;font-size:1rem">${r.best||'—'}</strong></div>
+          <div style="font-size:.68rem;color:var(--muted)"><span style="display:inline-block;width:38px">⬇️ Peor</span><strong style="color:#f87171;font-family:'Bebas Neue',cursive;font-size:1rem">${r.worst||'—'}</strong></div>
         </div>
       </td>
     </tr>`;
@@ -3232,7 +3232,7 @@ function buildTeamsTab(t) {
             const upBtn = isTournamentAdmin() && mi > 0 ? `<button onclick="event.stopPropagation();swapTeamMember('${t.id}','${team.id}',${mi},${mi-1})" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.65rem;padding:0 1px;line-height:1" title="Subir">▲</button>` : '';
             const downBtn = isTournamentAdmin() && mi < members.length-1 ? `<button onclick="event.stopPropagation();swapTeamMember('${t.id}','${team.id}',${mi},${mi+1})" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.65rem;padding:0 1px;line-height:1" title="Bajar">▼</button>` : '';
             return `<div style="display:flex;align-items:center;gap:5px;background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:4px 8px">
-              <span style="font-family:'Bebas Neue',cursive;font-size:.85rem;color:var(--muted);min-width:14px;text-align:center">${mi+1}</span>
+              <span style="font-family:'Bebas Neue',cursive;font-size:1rem;color:var(--muted);min-width:14px;text-align:center">${mi+1}</span>
               ${isTournamentAdmin() ? `<div style="display:flex;flex-direction:column;gap:0px;flex-shrink:0">${upBtn}${downBtn}</div>` : ''}
               <span class="badge ${CAT_CLS[p.cat]||''}" style="font-size:.52rem;padding:1px 5px">${p.cat}</span>
               ${hcBadge}
@@ -5828,11 +5828,11 @@ function buildMultifaseTab(t) {
               ${displayName}${clsBadge}
               ${subName}
             </td>
-            <td style="text-align:center;font-family:'Bebas Neue',cursive;font-size:.9rem">${e.pj}</td>
-            <td style="text-align:center;font-family:'Bebas Neue',cursive;font-size:.9rem;color:#86efac">${e.pg}</td>
-            <td style="text-align:center;font-family:'Bebas Neue',cursive;font-size:.9rem;color:#f87171">${e.pp}</td>
+            <td style="text-align:center;font-family:'Bebas Neue',cursive;font-size:1rem">${e.pj}</td>
+            <td style="text-align:center;font-family:'Bebas Neue',cursive;font-size:1rem;color:#86efac">${e.pg}</td>
+            <td style="text-align:center;font-family:'Bebas Neue',cursive;font-size:1rem;color:#f87171">${e.pp}</td>
             <td style="text-align:center;font-family:'Bebas Neue',cursive;color:var(--accent)">${pts}</td>
-            <td style="text-align:center;font-family:'Bebas Neue',cursive;font-size:.85rem">${e.pinesF}</td>
+            <td style="text-align:center;font-family:'Bebas Neue',cursive;font-size:1rem">${e.pinesF}</td>
           </tr>`;
         }).join('');
         return `<div style="margin-bottom:14px">
@@ -5974,7 +5974,7 @@ function openCerrarRonda(tId, ri) {
         <input type="checkbox" class="cr-cb" value="${e.id}" ${pre?'checked':''} style="accent-color:#38bdf8;width:16px;height:16px" onchange="crSelUpdate(this)">
         <span style="min-width:16px;font-size:.65rem;color:var(--muted);text-align:right">${i+1}</span>
         <span style="flex:1;font-size:.74rem;font-weight:${pre?700:400}">${getName(e.id)}</span>
-        <span style="font-family:'Bebas Neue',cursive;font-size:.8rem;color:var(--accent)">${e.pts}pts ${e.palos}p</span>
+        <span style="font-family:'Bebas Neue',cursive;font-size:1rem;color:var(--accent)">${e.pts}pts ${e.palos}p</span>
       </label>`;
     }).join('');
   }
@@ -8014,7 +8014,7 @@ function openBracketMatchView(tId, ri, matchId) {
         const memberLines = stored[mi] || [];
         const memberTotal = memberLines.reduce((s,v)=>s+(v||0), 0);
         const linesCells = memberLines.map(v =>
-          `<span style="font-family:'Bebas Neue',cursive;font-size:.95rem;min-width:36px;text-align:center;display:inline-block">${v||'—'}</span>`
+          `<span style="font-family:'Bebas Neue',cursive;font-size:1.05rem;min-width:36px;text-align:center;display:inline-block">${v||'—'}</span>`
         ).join('');
         return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
           <span style="flex:1;font-size:.76rem;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p?p.name:'?'}${hcTag}</span>
@@ -8122,7 +8122,7 @@ function openDynBracketMatch(tId, ri, matchId, bracketSource) {
         return `<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;padding:4px 0;border-bottom:1px solid var(--border)">
           <span style="flex:1;font-size:.74rem;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(pName)} ${hcTag}</span>
           <div style="display:flex;gap:3px;flex-shrink:0">${inputs}</div>
-          <span id="${subtotalId}" style="font-family:'Bebas Neue',cursive;font-size:.9rem;color:var(--accent);min-width:32px;text-align:right;flex-shrink:0">—</span>
+          <span id="${subtotalId}" style="font-family:'Bebas Neue',cursive;font-size:1rem;color:var(--accent);min-width:32px;text-align:right;flex-shrink:0">—</span>
         </div>`;
       }).join('');
     }
@@ -8567,7 +8567,7 @@ function buildSextPuntajesTab(t) {
                 value="${val}" placeholder="—"
                 style="width:46px;text-align:center;font-family:'Bebas Neue',cursive;font-size:1rem;padding:4px 2px;${isBestLine?'border-color:#fb923c;background:rgba(251,146,60,.1)':''}"
                 oninput="sextUpdateLine(this)">`
-            : `<span style="font-family:'Bebas Neue',cursive;font-size:1rem;width:46px;text-align:center;display:inline-block;${isBestLine?'color:#fb923c;font-weight:700':(val?'color:var(--text)':'color:var(--muted)')}">${val||'—'}</span>`
+            : `<span style="font-family:'Bebas Neue',cursive;font-size:1.05rem;width:46px;text-align:center;display:inline-block;${isBestLine?'color:#fb923c':(val?'color:var(--text)':'color:var(--muted)')}">${val||'—'}</span>`
           }
         </div>`;
       }).join('');
@@ -8575,7 +8575,7 @@ function buildSextPuntajesTab(t) {
       return `<div style="padding:8px 0;border-bottom:1px solid var(--border)">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
           <span style="font-size:.78rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:55%">${esc(name)}</span>
-          <span class="sext-mtotal-${team.id}-${pid}" style="font-family:'Bebas Neue',cursive;font-size:1.15rem;color:${isBestPlayer?'#fb923c':'var(--accent)'};font-weight:700">${memberTotal || '—'}</span>
+          <span class="sext-mtotal-${team.id}-${pid}" style="font-family:'Bebas Neue',cursive;font-size:1.25rem;color:${isBestPlayer?'#fb923c':'var(--accent)'}">${memberTotal || '—'}</span>
         </div>
         <div style="display:flex;gap:5px;flex-wrap:nowrap;overflow-x:auto">${lineInputs}</div>
       </div>`;
@@ -8832,11 +8832,11 @@ function buildSumaPalosTab(t) {
           return `<input class="input sp-member-line" type="number" min="0" max="300"
             data-tid="${t.id}" data-teamid="${r.id}" data-pid="${pid}" data-li="${li}"
             value="${val||''}" placeholder="—"
-            style="width:48px;text-align:center;font-family:'Bebas Neue',cursive;font-size:.95rem;padding:3px 2px;${isBest?'border-color:#fb923c;background:rgba(251,146,60,.1)':''}"
+            style="width:48px;text-align:center;font-family:'Bebas Neue',cursive;font-size:1.05rem;padding:3px 2px;${isBest?'border-color:#fb923c;background:rgba(251,146,60,.1)':''}"
             oninput="spMemberUpdate(this)">`;
         } else {
           const bestStyle = isBest ? 'color:#fb923c;font-weight:700' : (val?'color:var(--text)':'color:var(--muted)');
-          return `<span style="font-family:'Bebas Neue',cursive;font-size:.95rem;width:48px;text-align:center;display:inline-block;${bestStyle}">${val||'—'}</span>`;
+          return `<span style="font-family:'Bebas Neue',cursive;font-size:1.05rem;width:48px;text-align:center;display:inline-block;${bestStyle}">${val||'—'}</span>`;
         }
       }).join('');
 
@@ -8845,7 +8845,7 @@ function buildSumaPalosTab(t) {
           <span class="badge ${CAT_CLS[cat]||''}" style="font-size:.48rem;padding:1px 4px">${cat}</span>
           <span style="font-size:.76rem;font-weight:600">${esc(pName)}</span>
           ${hcBadge}
-          <span class="sp-m-total-${r.id}-${pid}" style="margin-left:auto;font-family:'Bebas Neue',cursive;font-size:1.15rem;color:${isBestPlayer?'#fb923c':'var(--accent)'};flex-shrink:0;font-weight:700">${pTotal||'—'}</span>
+          <span class="sp-m-total-${r.id}-${pid}" style="margin-left:auto;font-family:'Bebas Neue',cursive;font-size:1.25rem;color:${isBestPlayer?'#fb923c':'var(--accent)'};flex-shrink:0">${pTotal||'—'}</span>
         </div>
         <div style="display:flex;gap:3px">${lineSlots}</div>
       </div>`;
@@ -9007,9 +9007,9 @@ function openSelectAdvancingModal(t, items, preSelected, onConfirm, title) {
     return `<label class="adv-row" data-id="${item.id}" style="display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:8px;cursor:pointer;border:1px solid ${pre?'rgba(56,189,248,.3)':'var(--border)'};background:${pre?'rgba(56,189,248,.04)':'transparent'};margin-bottom:4px;transition:all .15s">
       <input type="checkbox" class="adv-cb" value="${item.id}" ${checked} style="accent-color:#38bdf8;width:18px;height:18px;flex-shrink:0"
         onchange="advUpdateRow(this)">
-      <span style="min-width:22px;font-family:'Bebas Neue',cursive;color:var(--muted);font-size:.9rem;text-align:right">${i+1}</span>
+      <span style="min-width:22px;font-family:'Bebas Neue',cursive;color:var(--muted);font-size:1rem;text-align:right">${i+1}</span>
       <span style="flex:1;font-size:.78rem;font-weight:${pre?700:400}">${item.label}</span>
-      <span style="font-family:'Bebas Neue',cursive;font-size:.95rem;color:var(--accent)">${item.detail??''}</span>
+      <span style="font-family:'Bebas Neue',cursive;font-size:1.05rem;color:var(--accent)">${item.detail??''}</span>
     </label>`;
   }).join('');
 
@@ -9290,7 +9290,7 @@ function buildTournamentPlayerAverages(t) {
       ? `<span style="font-size:.55rem;color:var(--accent);background:rgba(59,130,246,.1);border:1px solid rgba(59,130,246,.25);padding:1px 5px;border-radius:5px">HCP+${hcap}</span>`
       : '';
     return `<div class="team-row" style="align-items:center;gap:10px">
-      <span style="font-family:'Bebas Neue',cursive;font-size:.95rem;min-width:22px;text-align:right;color:var(--muted)">${i+1}</span>
+      <span style="font-family:'Bebas Neue',cursive;font-size:1.05rem;min-width:22px;text-align:right;color:var(--muted)">${i+1}</span>
       <div style="flex:1;min-width:0">
         <div style="font-weight:600;font-size:.82rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.name)}</div>
         <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
@@ -9781,7 +9781,7 @@ function buildZonaFinalIndividual(t) {
           style="width:52px;text-align:center;font-family:'Bebas Neue',cursive;font-size:1rem;padding:3px 2px"
           oninput="zfiUpdate(this)">`;
       } else {
-        return `<span style="font-family:'Bebas Neue',cursive;font-size:.95rem;width:48px;text-align:center;display:inline-block;color:${val?'var(--text)':'var(--muted)'}">${val||'—'}</span>`;
+        return `<span style="font-family:'Bebas Neue',cursive;font-size:1.05rem;width:48px;text-align:center;display:inline-block;color:${val?'var(--text)':'var(--muted)'}">${val||'—'}</span>`;
       }
     }).join('');
 
@@ -10533,19 +10533,19 @@ function buildLigaTablaTab(t) {
     const cat = getCat(s.pid);
     const grp = getGroupName(s.pid);
     return `<tr${i<3?' style="background:rgba(59,130,246,.06)"':''}>
-      <td style="font-family:'Bebas Neue',cursive;text-align:center;font-size:.85rem;color:${i<3?'var(--accent)':'var(--muted)'}">${i+1}</td>
+      <td style="font-family:'Bebas Neue',cursive;text-align:center;font-size:1rem;color:${i<3?'var(--accent)':'var(--muted)'}">${i+1}</td>
       <td style="font-size:.76rem;font-weight:700">
         ${getName(s.pid)}
         <span class="badge ${CAT_CLS[cat]||''}" style="font-size:.42rem;padding:0 3px;margin-left:3px">${cat}</span>
         <span style="font-size:.5rem;color:var(--muted);margin-left:2px">${grp}</span>
       </td>
-      <td style="text-align:center;font-family:'Bebas Neue',cursive;font-size:.85rem">${s.pj}</td>
-      <td style="text-align:center;font-family:'Bebas Neue',cursive;font-size:.85rem;color:#86efac">${s.pg}</td>
-      <td style="text-align:center;font-family:'Bebas Neue',cursive;font-size:.85rem;color:var(--muted)">${s.pe}</td>
-      <td style="text-align:center;font-family:'Bebas Neue',cursive;font-size:.85rem;color:#f87171">${s.pp}</td>
-      <td style="text-align:center;font-family:'Bebas Neue',cursive;font-size:.85rem">${s.pf}</td>
-      <td style="text-align:center;font-family:'Bebas Neue',cursive;font-size:.75rem;color:#3b82f6">${s.bonus}</td>
-      <td style="text-align:center;font-family:'Bebas Neue',cursive;font-size:1rem;color:var(--accent);font-weight:700">${s.pts}</td>
+      <td style="text-align:center;font-family:'Bebas Neue',cursive;font-size:1rem">${s.pj}</td>
+      <td style="text-align:center;font-family:'Bebas Neue',cursive;font-size:1rem;color:#86efac">${s.pg}</td>
+      <td style="text-align:center;font-family:'Bebas Neue',cursive;font-size:1rem;color:var(--muted)">${s.pe}</td>
+      <td style="text-align:center;font-family:'Bebas Neue',cursive;font-size:1rem;color:#f87171">${s.pp}</td>
+      <td style="text-align:center;font-family:'Bebas Neue',cursive;font-size:1rem">${s.pf}</td>
+      <td style="text-align:center;font-family:'Bebas Neue',cursive;font-size:1rem;color:#3b82f6">${s.bonus}</td>
+      <td style="text-align:center;font-family:'Bebas Neue',cursive;font-size:1.1rem;color:var(--accent)">${s.pts}</td>
     </tr>`;
   }).join('');
 
