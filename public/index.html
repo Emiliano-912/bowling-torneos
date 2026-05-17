@@ -8417,7 +8417,9 @@ function getEntryName(t, id) {
     if(!team) return id;
     const names = (team.members||[]).map(pid => {
       const p = DB.players.find(x=>x.id===pid);
-      return p ? p.name.split(',')[0].trim().split(' ')[0] : '?';
+      if(!p) return '?';
+      if(t.mode === 'trio') return p.name;
+      return p.name.split(',')[0].trim().split(' ')[0];
     }).filter(Boolean);
     return names.length ? names.join(' & ') : team.name;
   }
