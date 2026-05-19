@@ -7819,6 +7819,16 @@ function buildBracketTab(t) {
           actionHtml = `${zonaFinalBtn}${nextRoundBtn}${alreadyStarted}`;
         }
       }
+    } else if(isTournamentAdmin() && isRepechajeFmt && ri === 0 && isLast && !allDone) {
+      const partialLosers = round.matches.filter(m => m.winner).map(m => m.winner === m.a ? m.b : m.a).filter(Boolean);
+      const hasRepechaje = (t.repechajeBracket||[]).length > 0;
+      const repBtn = !hasRepechaje && partialLosers.length >= 2
+        ? `<button class="btn btn-ghost btn-sm" style="margin-top:6px;width:100%" onclick="startRepechajeFromCuartos('${t.id}')">🔄 Iniciar repechaje (${partialLosers.length} perdedores)</button>`
+        : '';
+      const repStarted = hasRepechaje ? `<div style="margin-top:4px;font-size:.62rem;color:#f59e0b;text-align:center">✓ Repechaje iniciado</div>` : '';
+      const pending = round.matches.filter(m => !m.winner).length;
+      const pendingHint = `<div style="margin-top:4px;font-size:.6rem;color:var(--muted);text-align:center">${pending} partido${pending>1?'s':''} pendiente${pending>1?'s':''} en cuartos</div>`;
+      actionHtml = `${repBtn}${repStarted}${pendingHint}`;
     } else if(!isTournamentAdmin() && allDone && isLast && champion && round.matches.length === 1 && !t.zonaFinal) {
       actionHtml = `<div style="margin-top:10px;text-align:center;padding:8px;background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.2);border-radius:8px">
         🏆 <strong style="color:var(--accent)">${champion}</strong></div>`;
@@ -9482,7 +9492,7 @@ function startRepechajeFromCuartos(tId) {
   if(!t||!isTournamentAdmin()) return;
   const cuartos = (t.bracketRounds||[])[0];
   if(!cuartos) return;
-  const losers = cuartos.matches.map(m => m.winner === m.a ? m.b : m.a).filter(Boolean);
+  const losers = cuartos.matches.filter(m => m.winner).map(m => m.winner === m.a ? m.b : m.a).filter(Boolean);
   if(losers.length < 2) { toast('No hay suficientes perdedores','err'); return; }
   openCreateRound(tId, losers, 0, { bracketKey: 'repechajeBracket', targetTab: 'repechaje', suggestedName: 'Ronda 1 Repechaje' });
 }
@@ -9510,12 +9520,16 @@ function buildRepechajeTab(t) {
   const rounds = t.repechajeBracket || [];
 
   if(!rounds.length) {
-    const hasCuartos = (t.bracketRounds||[]).length > 0 && (t.bracketRounds[0].matches||[]).every(m=>m.winner);
-    const hint = hasCuartos
-      ? 'Los cuartos de final están completos. Iniciá el repechaje desde la pestaña Pica-Pica.'
-      : 'Primero completá los cuartos de final en la pestaña Pica-Pica.';
+    const cuartos = (t.bracketRounds||[])[0];
+    const losers = cuartos ? cuartos.matches.filter(m => m.winner).map(m => m.winner === m.a ? m.b : m.a).filter(Boolean) : [];
+    const hint = losers.length >= 2
+      ? `Hay ${losers.length} perdedores disponibles para iniciar el repechaje.`
+      : 'Completá algunos partidos del pica-pica para tener perdedores.';
+    const startBtn = isTournamentAdmin() && losers.length >= 2
+      ? `<button class="btn btn-ghost btn-sm" style="margin-top:10px" onclick="startRepechajeFromCuartos('${t.id}')">🔄 Iniciar repechaje (${losers.length} perdedores)</button>`
+      : '';
     return `<div class="empty"><div class="empty-icon">🔄</div><div class="empty-title">Repechaje no iniciado</div>
-      <div class="empty-sub">${hint}</div></div>`;
+      <div class="empty-sub">${hint}</div>${startBtn}</div>`;
   }
 
   const cols = rounds.map((round, ri) => {
