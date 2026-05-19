@@ -7794,7 +7794,7 @@ function buildBracketTab(t) {
           let repStarted = '';
           if(hasRepechaje) {
             const newL = getNewRepechajeLosers(t);
-            const addBtn = newL.length >= 2 ? `<button class="btn btn-ghost btn-sm" style="margin-top:4px;width:100%;font-size:.65rem;border-color:rgba(245,158,11,.4);color:#f59e0b" onclick="addLosersToRepechaje('${t.id}')">➕ Agregar ${newL.length} perdedores al repechaje</button>` : '';
+            const addBtn = newL.length >= 1 ? `<button class="btn btn-ghost btn-sm" style="margin-top:4px;width:100%;font-size:.65rem;border-color:rgba(245,158,11,.4);color:#f59e0b" onclick="addLosersToRepechaje('${t.id}')">➕ Agregar ${newL.length} perdedor${newL.length!==1?'es':''} al repechaje</button>` : '';
             repStarted = `<div style="margin-top:4px;font-size:.62rem;color:#f59e0b;text-align:center">✓ Repechaje iniciado</div>${addBtn}`;
           }
           actionHtml = rounds.length > 1 ? `<div style="margin-top:6px;font-size:.62rem;color:#86efac">✓ Siguiente ronda creada</div>${pendingHint}` : `${semisBtn}${repBtn}${repStarted}${pendingHint}`;
@@ -7832,7 +7832,15 @@ function buildBracketTab(t) {
       actionHtml = `<div style="margin-top:10px;text-align:center;padding:8px;background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.2);border-radius:8px">
         🏆 <strong style="color:var(--accent)">${champion}</strong></div>`;
     } else if(isTournamentAdmin() && !round.locked && !isLast) {
-      actionHtml = allDone ? `<div style="margin-top:6px;font-size:.62rem;color:#86efac">✓ Ronda completada</div>` : pendingHint;
+      const doneHint = allDone ? `<div style="margin-top:6px;font-size:.62rem;color:#86efac">✓ Ronda completada</div>` : pendingHint;
+      if(isRepechajeFmt && ri === 0) {
+        const hasRepechaje = (t.repechajeBracket||[]).length > 0;
+        const newL = hasRepechaje ? getNewRepechajeLosers(t) : [];
+        const addBtn = newL.length >= 1 ? `<button class="btn btn-ghost btn-sm" style="margin-top:4px;width:100%;font-size:.65rem;border-color:rgba(245,158,11,.4);color:#f59e0b" onclick="addLosersToRepechaje('${t.id}')">➕ Agregar ${newL.length} perdedor${newL.length!==1?'es':''} al repechaje</button>` : '';
+        actionHtml = `${doneHint}${addBtn}`;
+      } else {
+        actionHtml = doneHint;
+      }
     }
 
     const rLineas = round.lineasPorJugador || 1;
@@ -9499,7 +9507,7 @@ function addLosersToRepechaje(tId) {
   const t = getTournament(tId);
   if(!t||!isTournamentAdmin()) return;
   const newLosers = getNewRepechajeLosers(t);
-  if(newLosers.length < 2) { toast('No hay suficientes perdedores nuevos','err'); return; }
+  if(newLosers.length < 1) { toast('No hay perdedores nuevos','err'); return; }
 
   const rep = t.repechajeBracket || [];
   const round1 = rep[0];
@@ -9681,7 +9689,7 @@ function buildRepechajeTab(t) {
   const resetBtn = isTournamentAdmin() ? `<button class="btn btn-danger btn-sm" onclick="resetRepechaje('${t.id}')">🔄 Resetear repechaje</button>` : '';
   const autoFillBtn = isTournamentAdmin() && rounds.length ? `<button class="btn btn-ghost btn-sm" id="td-auto-results-repechaje">🎲 Auto-completar</button>` : '';
   const newLosers = getNewRepechajeLosers(t);
-  const addLosersBtn = isTournamentAdmin() && newLosers.length >= 2 ? `<button class="btn btn-ghost btn-sm" style="border-color:rgba(245,158,11,.4);color:#f59e0b" onclick="addLosersToRepechaje('${t.id}')">➕ Agregar ${newLosers.length} perdedores</button>` : '';
+  const addLosersBtn = isTournamentAdmin() && newLosers.length >= 1 ? `<button class="btn btn-ghost btn-sm" style="border-color:rgba(245,158,11,.4);color:#f59e0b" onclick="addLosersToRepechaje('${t.id}')">➕ Agregar ${newLosers.length} perdedor${newLosers.length!==1?'es':''}</button>` : '';
 
   return `<div style="margin-bottom:10px;padding:10px 12px;background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.2);border-radius:10px">
     <div style="font-size:.72rem;color:#f59e0b;font-weight:700">🔄 REPECHAJE</div>
