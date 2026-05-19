@@ -8069,12 +8069,14 @@ function openBracketMatchView(tId, ri, matchId) {
     const storedB = _migrateScores(m.member_scores_b, (teamB.members||[]).length, lineas);
 
     function readonlyRows(team, stored, isWinner) {
-      return (team.members||[]).map((pid, mi) => {
+      const lineTots = Array.from({length:lineas}, ()=>0);
+      const rows = (team.members||[]).map((pid, mi) => {
         const p = DB.players.find(x=>x.id===pid);
         const hc = getHcap(t, pid);
         const hcTag = hc > 0 ? ` <span style="font-size:.48rem;color:var(--accent)">+${hc}</span>` : '';
         const memberLines = stored[mi] || [];
         const memberTotal = memberLines.reduce((s,v)=>s+(v||0), 0);
+        memberLines.forEach((v,li) => { if(li < lineas) lineTots[li] += (v||0); });
         const linesCells = memberLines.map(v =>
           `<span style="font-family:'Bebas Neue',cursive;font-size:1.05rem;min-width:36px;text-align:center;display:inline-block">${v||'—'}</span>`
         ).join('');
@@ -8084,7 +8086,25 @@ function openBracketMatchView(tId, ri, matchId) {
           <span style="font-family:'Bebas Neue',cursive;font-size:1rem;color:var(--accent);min-width:34px;text-align:right;flex-shrink:0">${memberTotal}</span>
         </div>`;
       }).join('');
+      const grandTot = lineTots.reduce((s,v)=>s+v,0);
+      const totCells = lineTots.map(v =>
+        `<span style="font-family:'Bebas Neue',cursive;font-size:1.05rem;min-width:36px;text-align:center;display:inline-block">${v||'—'}</span>`
+      ).join('');
+      const totalRow = `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:2px solid var(--border2)">
+        <span style="flex:1;font-size:.76rem;font-weight:700">Total</span>
+        <div style="display:flex;gap:4px;flex-shrink:0">${totCells}</div>
+        <span style="font-family:'Bebas Neue',cursive;font-size:1rem;color:var(--accent);min-width:34px;text-align:right;flex-shrink:0;font-weight:700">${grandTot}</span>
+      </div>`;
+      return rows + totalRow;
     }
+
+    const roHeaderRow = lineas > 1 ? `<div style="display:flex;align-items:center;gap:8px;padding:2px 0">
+      <span style="flex:1"></span>
+      <div style="display:flex;gap:4px;flex-shrink:0">${Array.from({length:lineas}, (_,li) =>
+        `<span style="font-size:.55rem;color:var(--muted);min-width:36px;text-align:center;display:inline-block">Línea ${li+1}</span>`
+      ).join('')}</div>
+      <span style="min-width:34px;text-align:right;font-size:.55rem;color:var(--muted);flex-shrink:0">Total</span>
+    </div>` : '';
 
     const colorA = winA ? '#86efac' : '#f87171';
     const colorB = winB ? '#86efac' : '#f87171';
@@ -8095,6 +8115,7 @@ function openBracketMatchView(tId, ri, matchId) {
           <span style="font-size:.72rem;font-weight:700;color:${colorA}">${winA?'🏆 ':''}${esc(nameA)}</span>
           <span style="margin-left:auto;font-family:'Bebas Neue',cursive;font-size:1.3rem;color:${colorA}">${m.palosA}</span>
         </div>
+        ${roHeaderRow}
         ${readonlyRows(teamA, storedA, winA)}
       </div>
       <div style="margin-bottom:6px">
@@ -8102,12 +8123,9 @@ function openBracketMatchView(tId, ri, matchId) {
           <span style="font-size:.72rem;font-weight:700;color:${colorB}">${winB?'🏆 ':''}${esc(nameB)}</span>
           <span style="margin-left:auto;font-family:'Bebas Neue',cursive;font-size:1.3rem;color:${colorB}">${m.palosB}</span>
         </div>
+        ${roHeaderRow}
         ${readonlyRows(teamB, storedB, winB)}
       </div>`;
-
-    if(lineas > 1) {
-      bodyHtml += `<div style="text-align:center;font-size:.62rem;color:var(--muted);margin-top:6px">${lineas} líneas por jugador</div>`;
-    }
   } else {
     // Individual: just show totals
     const colorA = winA ? '#86efac' : '#f87171';
@@ -8192,16 +8210,38 @@ function openDynBracketMatch(tId, ri, matchId, bracketSource) {
     const rowsA = memberLineInputs(teamA.members, storedA, 'a');
     const rowsB = memberLineInputs(teamB.members, storedB, 'b');
 
+    const colW = lineas > 2 ? '48px' : '60px';
+    const lineHeaderRow = lineas > 1 ? `<div style="display:flex;align-items:center;gap:6px;padding:2px 0">
+      <span style="flex:1"></span>
+      <div style="display:flex;gap:3px;flex-shrink:0">${Array.from({length:lineas}, (_,li) =>
+        `<span style="width:${colW};text-align:center;font-size:.55rem;color:var(--muted)">Línea ${li+1}</span>`
+      ).join('')}</div>
+      <span style="min-width:32px;text-align:right;font-size:.55rem;color:var(--muted);flex-shrink:0">Total</span>
+    </div>` : '';
+    function lineTotalRow(side) {
+      return `<div style="display:flex;align-items:center;gap:6px;padding:6px 0;border-top:2px solid var(--border2)">
+        <span style="flex:1;font-size:.74rem;font-weight:700">Total</span>
+        <div style="display:flex;gap:3px;flex-shrink:0">${Array.from({length:lineas}, (_,li) =>
+          `<span id="dbm-linetot-${side}-${li}" style="width:${colW};text-align:center;font-family:'Bebas Neue',cursive;font-size:1rem;color:var(--accent)">—</span>`
+        ).join('')}</div>
+        <span id="dbm-grandtot-${side}" style="font-family:'Bebas Neue',cursive;font-size:1rem;color:var(--accent);min-width:32px;text-align:right;flex-shrink:0">—</span>
+      </div>`;
+    }
+
     document.getElementById('mr-body').innerHTML = `
       <div style="text-align:center;margin-bottom:10px;font-size:.9rem;font-weight:700">${esc(nameA)} <span style="color:var(--muted)">vs</span> ${esc(nameB)}</div>
       <div style="text-align:center;margin-bottom:14px;font-size:.65rem;color:var(--muted)">${lineas} línea${lineas!==1?'s':''} por jugador</div>
       <div style="margin-bottom:14px">
         <div style="font-size:.7rem;font-weight:700;color:var(--accent);margin-bottom:6px">${esc(nameA)}</div>
+        ${lineHeaderRow}
         ${rowsA}
+        ${lineTotalRow('a')}
       </div>
       <div style="margin-bottom:14px">
         <div style="font-size:.7rem;font-weight:700;color:var(--accent);margin-bottom:6px">${esc(nameB)}</div>
+        ${lineHeaderRow}
         ${rowsB}
+        ${lineTotalRow('b')}
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:10px;background:var(--card);border:1px solid var(--border);border-radius:10px">
         <div style="text-align:center">
@@ -8321,12 +8361,16 @@ function _collectBracketScores(side, memberCount, lineas) {
 function dbmCalcTotals() {
   let totA = 0, totB = 0;
   const memberTotals = {a:{}, b:{}};
+  const lineTotals = {a:{}, b:{}};
   document.querySelectorAll('.dbm-line').forEach(el => {
     const side = el.dataset.side;
     const mi = el.dataset.mi;
+    const li = el.dataset.li;
     const val = parseInt(el.value) || 0;
     if(!memberTotals[side][mi]) memberTotals[side][mi] = 0;
     memberTotals[side][mi] += val;
+    if(!lineTotals[side][li]) lineTotals[side][li] = 0;
+    lineTotals[side][li] += val;
     if(side === 'a') totA += val; else totB += val;
   });
   Object.entries(memberTotals.a).forEach(([mi, tot]) => {
@@ -8336,6 +8380,16 @@ function dbmCalcTotals() {
   Object.entries(memberTotals.b).forEach(([mi, tot]) => {
     const el = document.getElementById(`dbm-sub-b-${mi}`);
     if(el) el.textContent = tot || '—';
+  });
+  ['a','b'].forEach(side => {
+    let grandTot = 0;
+    Object.entries(lineTotals[side]).forEach(([li, tot]) => {
+      const el = document.getElementById(`dbm-linetot-${side}-${li}`);
+      if(el) el.textContent = tot || '—';
+      grandTot += tot;
+    });
+    const gtEl = document.getElementById(`dbm-grandtot-${side}`);
+    if(gtEl) gtEl.textContent = grandTot || '—';
   });
   const elTA = document.getElementById('dbm-tot-a');
   const elTB = document.getElementById('dbm-tot-b');
