@@ -7775,12 +7775,14 @@ function buildBracketTab(t) {
     // Action area below each round
     let actionHtml = '';
     const isRepechajeFmt = t.format === 'suma+repechaje+zona';
-    if(isTournamentAdmin() && allDone && isLast) {
-      const winners = round.matches.map(m=>m.winner).filter(Boolean);
+    const winners = round.matches.map(m=>m.winner).filter(Boolean);
+    const pendingCount = round.matches.filter(m => !m.winner).length;
+    const pendingHint = pendingCount > 0 ? `<div style="margin-top:4px;font-size:.6rem;color:var(--muted);text-align:center">${pendingCount} partido${pendingCount>1?'s':''} pendiente${pendingCount>1?'s':''}</div>` : '';
+    if(isTournamentAdmin() && isLast && winners.length >= 1) {
       const hasZF = !!t.zonaFinal;
 
       if(isRepechajeFmt) {
-        const losers = round.matches.map(m => m.winner === m.a ? m.b : m.a).filter(Boolean);
+        const losers = round.matches.filter(m => m.winner).map(m => m.winner === m.a ? m.b : m.a).filter(Boolean);
         const hasRepechaje = (t.repechajeBracket||[]).length > 0;
         if(ri === 0 && winners.length >= 2) {
           const semisBtn = rounds.length <= 1
@@ -7795,7 +7797,7 @@ function buildBracketTab(t) {
             const addBtn = newL.length >= 2 ? `<button class="btn btn-ghost btn-sm" style="margin-top:4px;width:100%;font-size:.65rem;border-color:rgba(245,158,11,.4);color:#f59e0b" onclick="addLosersToRepechaje('${t.id}')">➕ Agregar ${newL.length} perdedores al repechaje</button>` : '';
             repStarted = `<div style="margin-top:4px;font-size:.62rem;color:#f59e0b;text-align:center">✓ Repechaje iniciado</div>${addBtn}`;
           }
-          actionHtml = rounds.length > 1 ? `<div style="margin-top:6px;font-size:.62rem;color:#86efac">✓ Ronda completada</div>` : `${semisBtn}${repBtn}${repStarted}`;
+          actionHtml = rounds.length > 1 ? `<div style="margin-top:6px;font-size:.62rem;color:#86efac">✓ Siguiente ronda creada</div>${pendingHint}` : `${semisBtn}${repBtn}${repStarted}${pendingHint}`;
         } else if(ri >= 1) {
           const repDone = (t.repechajeBracket||[]).length > 0 && (t.repechajeBracket[t.repechajeBracket.length-1]?.matches||[]).every(m=>m.winner);
           const repWinner = repDone && t.repechajeBracket.length > 0 ? t.repechajeBracket[t.repechajeBracket.length-1].matches[0]?.winner : null;
@@ -7805,7 +7807,9 @@ function buildBracketTab(t) {
             : '';
           const needsRep = !repDone && !repWinner ? `<div style="margin-top:4px;font-size:.62rem;color:#f59e0b;text-align:center">⏳ Esperando resultado del repechaje</div>` : '';
           const alreadyStarted = hasZF ? `<div style="margin-top:6px;font-size:.65rem;color:#86efac;text-align:center">✓ Zona final iniciada</div>` : '';
-          actionHtml = `${zonaFinalBtn}${needsRep}${alreadyStarted}`;
+          actionHtml = `${zonaFinalBtn}${needsRep}${alreadyStarted}${pendingHint}`;
+        } else {
+          actionHtml = pendingHint;
         }
       } else {
         const nextRoundBtn = winners.length >= 2
@@ -7821,29 +7825,14 @@ function buildBracketTab(t) {
           actionHtml = `<div style="margin-top:10px;text-align:center;padding:8px;background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.2);border-radius:8px">
             🏆 <strong style="color:var(--accent)">${champion}</strong></div>`;
         } else {
-          actionHtml = `${zonaFinalBtn}${nextRoundBtn}${alreadyStarted}`;
+          actionHtml = `${zonaFinalBtn}${nextRoundBtn}${alreadyStarted}${pendingHint}`;
         }
       }
-    } else if(isTournamentAdmin() && isRepechajeFmt && ri === 0 && isLast && !allDone) {
-      const partialLosers = round.matches.filter(m => m.winner).map(m => m.winner === m.a ? m.b : m.a).filter(Boolean);
-      const hasRepechaje = (t.repechajeBracket||[]).length > 0;
-      const repBtn = !hasRepechaje && partialLosers.length >= 2
-        ? `<button class="btn btn-ghost btn-sm" style="margin-top:6px;width:100%" onclick="startRepechajeFromCuartos('${t.id}')">🔄 Iniciar repechaje (${partialLosers.length} perdedores)</button>`
-        : '';
-      let repStarted = '';
-      if(hasRepechaje) {
-        const newL = getNewRepechajeLosers(t);
-        const addBtn = newL.length >= 2 ? `<button class="btn btn-ghost btn-sm" style="margin-top:4px;width:100%;font-size:.65rem;border-color:rgba(245,158,11,.4);color:#f59e0b" onclick="addLosersToRepechaje('${t.id}')">➕ Agregar ${newL.length} perdedores al repechaje</button>` : '';
-        repStarted = `<div style="margin-top:4px;font-size:.62rem;color:#f59e0b;text-align:center">✓ Repechaje iniciado</div>${addBtn}`;
-      }
-      const pending = round.matches.filter(m => !m.winner).length;
-      const pendingHint = `<div style="margin-top:4px;font-size:.6rem;color:var(--muted);text-align:center">${pending} partido${pending>1?'s':''} pendiente${pending>1?'s':''} en cuartos</div>`;
-      actionHtml = `${repBtn}${repStarted}${pendingHint}`;
     } else if(!isTournamentAdmin() && allDone && isLast && champion && round.matches.length === 1 && !t.zonaFinal) {
       actionHtml = `<div style="margin-top:10px;text-align:center;padding:8px;background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.2);border-radius:8px">
         🏆 <strong style="color:var(--accent)">${champion}</strong></div>`;
-    } else if(isTournamentAdmin() && !round.locked && allDone && !isLast) {
-      actionHtml = `<div style="margin-top:6px;font-size:.62rem;color:#86efac">✓ Ronda completada</div>`;
+    } else if(isTournamentAdmin() && !round.locked && !isLast) {
+      actionHtml = allDone ? `<div style="margin-top:6px;font-size:.62rem;color:#86efac">✓ Ronda completada</div>` : pendingHint;
     }
 
     const rLineas = round.lineasPorJugador || 1;
@@ -9482,7 +9471,7 @@ function startSemisFromCuartos(tId) {
   const cuartos = (t.bracketRounds||[])[0];
   if(!cuartos) return;
   const winners = cuartos.matches.map(m=>m.winner).filter(Boolean);
-  if(winners.length < 4) { toast('Se necesitan al menos 4 ganadores de cuartos','err'); return; }
+  if(winners.length < 2) { toast('Se necesitan al menos 2 ganadores de cuartos','err'); return; }
   const losers = cuartos.matches.map(m => m.winner === m.a ? m.b : m.a).filter(Boolean);
   openCreateRound(tId, winners, 1, {
     suggestedName: 'Semifinales',
@@ -9591,11 +9580,9 @@ function advanceRepechaje(tId) {
   const rep = t.repechajeBracket || [];
   if(!rep.length) return;
   const lastRound = rep[rep.length - 1];
-  const allDone = lastRound.matches.every(m => m.winner);
-  if(!allDone) { toast('Completá todos los partidos de esta ronda','err'); return; }
   const winners = lastRound.matches.map(m => m.winner).filter(Boolean);
   if(winners.length < 2) {
-    toast('El repechaje ya tiene su ganador','info');
+    toast('Se necesitan al menos 2 ganadores para avanzar','info');
     return;
   }
   const roundName = winners.length === 2 ? 'Final Repechaje' : `Ronda ${rep.length + 1} Repechaje`;
@@ -9662,19 +9649,23 @@ function buildRepechajeTab(t) {
     }).join('');
 
     let actionHtml = '';
-    if(isTournamentAdmin() && allDone && isLast) {
-      const winners = round.matches.map(m=>m.winner).filter(Boolean);
+    const repWinners = round.matches.map(m=>m.winner).filter(Boolean);
+    const repPending = round.matches.filter(m => !m.winner).length;
+    const repPendingHint = repPending > 0 ? `<div style="margin-top:4px;font-size:.6rem;color:var(--muted);text-align:center">${repPending} partido${repPending>1?'s':''} pendiente${repPending>1?'s':''}</div>` : '';
+    if(isTournamentAdmin() && isLast && repWinners.length >= 1) {
       if(isFinal && champion) {
         actionHtml = `<div style="margin-top:10px;text-align:center;padding:8px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:8px">
           🔄 5° finalista: <strong style="color:#f59e0b">${champion}</strong></div>`;
-      } else if(winners.length >= 2) {
-        actionHtml = `<button class="btn btn-ghost btn-sm" style="margin-top:6px;width:100%;border-color:rgba(245,158,11,.4);color:#f59e0b" onclick="advanceRepechaje('${t.id}')">➕ Siguiente ronda (${winners.length} equipos)</button>`;
+      } else if(repWinners.length >= 2) {
+        actionHtml = `<button class="btn btn-ghost btn-sm" style="margin-top:6px;width:100%;border-color:rgba(245,158,11,.4);color:#f59e0b" onclick="advanceRepechaje('${t.id}')">➕ Siguiente ronda (${repWinners.length} equipos)</button>${repPendingHint}`;
+      } else {
+        actionHtml = repPendingHint;
       }
     } else if(!isTournamentAdmin() && allDone && isLast && isFinal && champion) {
       actionHtml = `<div style="margin-top:10px;text-align:center;padding:8px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:8px">
         🔄 5° finalista: <strong style="color:#f59e0b">${champion}</strong></div>`;
-    } else if(allDone && !isLast) {
-      actionHtml = `<div style="margin-top:6px;font-size:.62rem;color:#86efac">✓ Ronda completada</div>`;
+    } else if(!isLast) {
+      actionHtml = allDone ? `<div style="margin-top:6px;font-size:.62rem;color:#86efac">✓ Ronda completada</div>` : repPendingHint;
     }
 
     const rLineas = round.lineasPorJugador || 1;
