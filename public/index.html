@@ -7833,13 +7833,15 @@ function buildBracketTab(t) {
         🏆 <strong style="color:var(--accent)">${champion}</strong></div>`;
     } else if(isTournamentAdmin() && !round.locked && !isLast) {
       const doneHint = allDone ? `<div style="margin-top:6px;font-size:.62rem;color:#86efac">✓ Ronda completada</div>` : pendingHint;
+      const newW = getNewBracketWinners(t, ri);
+      const addWinnersBtn = newW.length >= 1 ? `<button class="btn btn-accent btn-sm" style="margin-top:4px;width:100%;font-size:.65rem" onclick="addWinnersToNextRound('${t.id}',${ri})">➕ Agregar ${newW.length} ganador${newW.length!==1?'es':''} a ${esc((rounds[ri+1]||{}).name||'siguiente ronda')}</button>` : '';
       if(isRepechajeFmt && ri === 0) {
         const hasRepechaje = (t.repechajeBracket||[]).length > 0;
         const newL = hasRepechaje ? getNewRepechajeLosers(t) : [];
-        const addBtn = newL.length >= 1 ? `<button class="btn btn-ghost btn-sm" style="margin-top:4px;width:100%;font-size:.65rem;border-color:rgba(245,158,11,.4);color:#f59e0b" onclick="addLosersToRepechaje('${t.id}')">➕ Agregar ${newL.length} perdedor${newL.length!==1?'es':''} al repechaje</button>` : '';
-        actionHtml = `${doneHint}${addBtn}`;
+        const addLosersBtn = newL.length >= 1 ? `<button class="btn btn-ghost btn-sm" style="margin-top:4px;width:100%;font-size:.65rem;border-color:rgba(245,158,11,.4);color:#f59e0b" onclick="addLosersToRepechaje('${t.id}')">➕ Agregar ${newL.length} perdedor${newL.length!==1?'es':''} al repechaje</button>` : '';
+        actionHtml = `${doneHint}${addWinnersBtn}${addLosersBtn}`;
       } else {
-        actionHtml = doneHint;
+        actionHtml = `${doneHint}${addWinnersBtn}`;
       }
     }
 
@@ -9491,6 +9493,85 @@ function startSemisFromCuartos(tId) {
       }
     }
   });
+}
+
+function getNewBracketWinners(t, ri) {
+  const round = (t.bracketRounds||[])[ri];
+  if(!round) return [];
+  const allWinners = round.matches.filter(m => m.winner).map(m => m.winner);
+  const inNextRounds = new Set();
+  for(let i = ri + 1; i < (t.bracketRounds||[]).length; i++) {
+    (t.bracketRounds[i].matches||[]).forEach(m => { if(m.a) inNextRounds.add(m.a); if(m.b) inNextRounds.add(m.b); });
+  }
+  return allWinners.filter(id => !inNextRounds.has(id));
+}
+
+function addWinnersToNextRound(tId, ri) {
+  snapshotTournament(tId);
+  const t = getTournament(tId);
+  if(!t||!isTournamentAdmin()) return;
+  const newWinners = getNewBracketWinners(t, ri);
+  if(newWinners.length < 1) { toast('No hay ganadores nuevos','err'); return; }
+
+  const nextRound = (t.bracketRounds||[])[ri + 1];
+  if(!nextRound) { toast('No existe la siguiente ronda','err'); return; }
+
+  function pairRow(idx) {
+    const opts = newWinners.map(id => `<option value="${id}">${getEntryName(t,id)}</option>`).join('');
+    return `<div class="bracket-pair-row" data-idx="${idx}" style="display:flex;align-items:center;gap:6px;margin-bottom:8px;padding:8px;background:var(--card);border:1px solid var(--border);border-radius:8px">
+      <select class="input pair-a" style="flex:1;font-size:.76rem">${opts}</select>
+      <span style="color:var(--muted);font-family:'Bebas Neue',cursive;font-size:1rem;flex-shrink:0">VS</span>
+      <select class="input pair-b" style="flex:1;font-size:.76rem">${opts}</select>
+      <button class="btn btn-danger btn-sm" onclick="this.closest('.bracket-pair-row').remove()" style="flex-shrink:0">✕</button>
+    </div>`;
+  }
+
+  const initPairs = Math.floor(newWinners.length / 2);
+
+  document.getElementById('mr-body').innerHTML = `
+    <div style="font-weight:700;font-size:.88rem;margin-bottom:10px">⚔️ Agregar partidos a ${nextRound.name}</div>
+    <div style="font-size:.72rem;color:var(--muted);margin-bottom:12px">Nuevos ganadores: <strong>${newWinners.map(id=>getEntryName(t,id)).join(', ')}</strong></div>
+    <div id="cr-pairs">${Array.from({length:initPairs},(_,i)=>pairRow(i)).join('')}</div>
+    <button class="btn btn-ghost btn-sm" style="margin-top:4px" id="cr-add-pair">+ Agregar partido</button>`;
+
+  setTimeout(() => {
+    document.getElementById('cr-add-pair')?.addEventListener('click', () => {
+      const opts = newWinners.map(id => `<option value="${id}">${getEntryName(t,id)}</option>`).join('');
+      document.getElementById('cr-pairs').insertAdjacentHTML('beforeend', `<div class="bracket-pair-row" style="display:flex;align-items:center;gap:6px;margin-bottom:8px;padding:8px;background:var(--card);border:1px solid var(--border);border-radius:8px">
+        <select class="input pair-a" style="flex:1;font-size:.76rem">${opts}</select>
+        <span style="color:var(--muted);font-family:'Bebas Neue',cursive;font-size:1rem;flex-shrink:0">VS</span>
+        <select class="input pair-b" style="flex:1;font-size:.76rem">${opts}</select>
+        <button class="btn btn-danger btn-sm" onclick="this.closest('.bracket-pair-row').remove()" style="flex-shrink:0">✕</button>
+      </div>`);
+    });
+  }, 10);
+
+  setTimeout(() => {
+    const rows = document.querySelectorAll('.bracket-pair-row');
+    rows.forEach((row, i) => {
+      const selA = row.querySelector('.pair-a');
+      const selB = row.querySelector('.pair-b');
+      if(newWinners[i*2])   selA.value = newWinners[i*2];
+      if(newWinners[i*2+1]) selB.value = newWinners[i*2+1];
+    });
+  }, 50);
+
+  document.getElementById('mr-submit').textContent = 'Agregar partidos';
+  document.getElementById('mr-submit').onclick = () => {
+    const pairs = [...document.querySelectorAll('.bracket-pair-row')];
+    const matches = pairs.map(row => ({
+      id: genId(),
+      a: row.querySelector('.pair-a').value,
+      b: row.querySelector('.pair-b').value,
+      scoreA: null, scoreB: null, palosA: null, palosB: null, winner: null
+    })).filter(m => m.a && m.b && m.a !== m.b);
+    if(!matches.length) { toast('Arma al menos un partido','err'); return; }
+    nextRound.matches.push(...matches);
+    save(); closeModal('modal-match-result');
+    toast(`✓ ${matches.length} partido${matches.length!==1?'s':''} agregado${matches.length!==1?'s':''} a ${nextRound.name}`);
+    switchTournamentTab('bracket');
+  };
+  openModal('modal-match-result');
 }
 
 function getNewRepechajeLosers(t) {
