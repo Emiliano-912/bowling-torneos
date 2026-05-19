@@ -1550,6 +1550,29 @@ function allScoresOf(p) {
 }
 
 // Scores without handicap (real lines)
+function _getBracketRepechajeLines(t, pid) {
+  const lines = [];
+  if(t.mode !== 'equipo' && t.mode !== 'trio') return lines;
+  (t.teams||[]).forEach(team => {
+    const idx = (team.members||[]).indexOf(pid);
+    if(idx < 0) return;
+    [t.bracketRounds, t.repechajeBracket].forEach(rounds => {
+      (rounds||[]).forEach(round => {
+        (round.matches||[]).forEach(bm => {
+          let ms = null;
+          if(bm.a === team.id) ms = bm.member_scores_a;
+          else if(bm.b === team.id) ms = bm.member_scores_b;
+          if(!ms || !ms[idx]) return;
+          const val = ms[idx];
+          if(Array.isArray(val)) val.forEach(v => { if(v > 0) lines.push(v); });
+          else if(val > 0) lines.push(val);
+        });
+      });
+    });
+  });
+  return lines;
+}
+
 function realAllScoresOf(p) {
   const key = '_real_' + p.id;
   if(!_scoreCache || _scoreCacheGen !== _currentCacheGen) {
@@ -1557,13 +1580,29 @@ function realAllScoresOf(p) {
     _scoreCacheGen = _currentCacheGen;
   }
   if(_scoreCache[key]) return _scoreCache[key];
-  const regular = [...p.scores]; // no HCP
+  const regular = [...p.scores];
   const trnReal = [];
   (DB.tournaments||[]).forEach(t => {
     if(t.countsForAvg === false) return;
-    const hcap = getHcap(t, p.id);
-    const lines = tournamentPlayerLines(t, p.id);
-    lines.forEach(line => { trnReal.push(Math.max(0, line - hcap)); });
+    const classHcap = getHcap(t, p.id);
+    const bracketHcap = getHcap(t, p.id, true);
+    const allLines = tournamentPlayerLines(t, p.id);
+
+    if(classHcap === bracketHcap || !t.bracketHandicaps) {
+      allLines.forEach(line => { trnReal.push(Math.max(0, line - classHcap)); });
+    } else {
+      const bLines = _getBracketRepechajeLines(t, p.id);
+      const bFreq = {};
+      bLines.forEach(v => { bFreq[v] = (bFreq[v]||0) + 1; });
+      allLines.forEach(line => {
+        if(bFreq[line] > 0) {
+          bFreq[line]--;
+          trnReal.push(Math.max(0, line - bracketHcap));
+        } else {
+          trnReal.push(Math.max(0, line - classHcap));
+        }
+      });
+    }
   });
   const result = [...regular, ...trnReal];
   _scoreCache[key] = result;
@@ -2080,8 +2119,20 @@ function openDetail(playerId, filterTrnId) {
   if(filterTrnId) {
     const t = trnsWithLines.find(x=>x.id===filterTrnId);
     if(t) {
-      const hcap = getHcap(t, playerId);
-      s = tournamentPlayerLines(t, playerId).map(line => Math.max(0, line - hcap));
+      const classHcap = getHcap(t, playerId);
+      const bracketHcap = getHcap(t, playerId, true);
+      const allLines = tournamentPlayerLines(t, playerId);
+      if(classHcap === bracketHcap || !t.bracketHandicaps) {
+        s = allLines.map(line => Math.max(0, line - classHcap));
+      } else {
+        const bLines = _getBracketRepechajeLines(t, playerId);
+        const bFreq = {};
+        bLines.forEach(v => { bFreq[v] = (bFreq[v]||0) + 1; });
+        s = allLines.map(line => {
+          if(bFreq[line] > 0) { bFreq[line]--; return Math.max(0, line - bracketHcap); }
+          return Math.max(0, line - classHcap);
+        });
+      }
     } else {
       s = [];
     }
