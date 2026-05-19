@@ -2113,26 +2113,13 @@ function openDetail(playerId, filterTrnId) {
       ${trnChips}
     </div>` : '';
 
-  // Scores to display (real, without HCP)
+  // Scores to display: tournament-specific shows raw lines (with HCP), general shows real (minus HCP)
   let s;
   let histLabel;
   if(filterTrnId) {
     const t = trnsWithLines.find(x=>x.id===filterTrnId);
     if(t) {
-      const classHcap = getHcap(t, playerId);
-      const bracketHcap = getHcap(t, playerId, true);
-      const allLines = tournamentPlayerLines(t, playerId);
-      if(classHcap === bracketHcap || !t.bracketHandicaps) {
-        s = allLines.map(line => Math.max(0, line - classHcap));
-      } else {
-        const bLines = _getBracketRepechajeLines(t, playerId);
-        const bFreq = {};
-        bLines.forEach(v => { bFreq[v] = (bFreq[v]||0) + 1; });
-        s = allLines.map(line => {
-          if(bFreq[line] > 0) { bFreq[line]--; return Math.max(0, line - bracketHcap); }
-          return Math.max(0, line - classHcap);
-        });
-      }
+      s = tournamentPlayerLines(t, playerId);
     } else {
       s = [];
     }
