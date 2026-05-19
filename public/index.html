@@ -7789,7 +7789,12 @@ function buildBracketTab(t) {
           const repBtn = !hasRepechaje && losers.length >= 2
             ? `<button class="btn btn-ghost btn-sm" style="margin-top:6px;width:100%" onclick="startRepechajeFromCuartos('${t.id}')">🔄 Iniciar repechaje (${losers.length} perdedores)</button>`
             : '';
-          const repStarted = hasRepechaje ? `<div style="margin-top:4px;font-size:.62rem;color:#f59e0b;text-align:center">✓ Repechaje iniciado</div>` : '';
+          let repStarted = '';
+          if(hasRepechaje) {
+            const newL = getNewRepechajeLosers(t);
+            const addBtn = newL.length >= 2 ? `<button class="btn btn-ghost btn-sm" style="margin-top:4px;width:100%;font-size:.65rem;border-color:rgba(245,158,11,.4);color:#f59e0b" onclick="addLosersToRepechaje('${t.id}')">➕ Agregar ${newL.length} perdedores al repechaje</button>` : '';
+            repStarted = `<div style="margin-top:4px;font-size:.62rem;color:#f59e0b;text-align:center">✓ Repechaje iniciado</div>${addBtn}`;
+          }
           actionHtml = rounds.length > 1 ? `<div style="margin-top:6px;font-size:.62rem;color:#86efac">✓ Ronda completada</div>` : `${semisBtn}${repBtn}${repStarted}`;
         } else if(ri >= 1) {
           const repDone = (t.repechajeBracket||[]).length > 0 && (t.repechajeBracket[t.repechajeBracket.length-1]?.matches||[]).every(m=>m.winner);
@@ -7825,7 +7830,12 @@ function buildBracketTab(t) {
       const repBtn = !hasRepechaje && partialLosers.length >= 2
         ? `<button class="btn btn-ghost btn-sm" style="margin-top:6px;width:100%" onclick="startRepechajeFromCuartos('${t.id}')">🔄 Iniciar repechaje (${partialLosers.length} perdedores)</button>`
         : '';
-      const repStarted = hasRepechaje ? `<div style="margin-top:4px;font-size:.62rem;color:#f59e0b;text-align:center">✓ Repechaje iniciado</div>` : '';
+      let repStarted = '';
+      if(hasRepechaje) {
+        const newL = getNewRepechajeLosers(t);
+        const addBtn = newL.length >= 2 ? `<button class="btn btn-ghost btn-sm" style="margin-top:4px;width:100%;font-size:.65rem;border-color:rgba(245,158,11,.4);color:#f59e0b" onclick="addLosersToRepechaje('${t.id}')">➕ Agregar ${newL.length} perdedores al repechaje</button>` : '';
+        repStarted = `<div style="margin-top:4px;font-size:.62rem;color:#f59e0b;text-align:center">✓ Repechaje iniciado</div>${addBtn}`;
+      }
       const pending = round.matches.filter(m => !m.winner).length;
       const pendingHint = `<div style="margin-top:4px;font-size:.6rem;color:var(--muted);text-align:center">${pending} partido${pending>1?'s':''} pendiente${pending>1?'s':''} en cuartos</div>`;
       actionHtml = `${repBtn}${repStarted}${pendingHint}`;
@@ -9486,6 +9496,84 @@ function startSemisFromCuartos(tId) {
   });
 }
 
+function getNewRepechajeLosers(t) {
+  const cuartos = (t.bracketRounds||[])[0];
+  if(!cuartos) return [];
+  const allLosers = cuartos.matches.filter(m => m.winner).map(m => m.winner === m.a ? m.b : m.a).filter(Boolean);
+  const inRepechaje = new Set();
+  (t.repechajeBracket||[]).forEach(round => round.matches.forEach(m => { if(m.a) inRepechaje.add(m.a); if(m.b) inRepechaje.add(m.b); }));
+  return allLosers.filter(id => !inRepechaje.has(id));
+}
+
+function addLosersToRepechaje(tId) {
+  snapshotTournament(tId);
+  const t = getTournament(tId);
+  if(!t||!isTournamentAdmin()) return;
+  const newLosers = getNewRepechajeLosers(t);
+  if(newLosers.length < 2) { toast('No hay suficientes perdedores nuevos','err'); return; }
+
+  const rep = t.repechajeBracket || [];
+  const round1 = rep[0];
+  const defaultLines = round1?.lineasPorJugador || 1;
+
+  function pairRow(idx) {
+    const opts = newLosers.map(id => `<option value="${id}">${getEntryName(t,id)}</option>`).join('');
+    return `<div class="bracket-pair-row" data-idx="${idx}" style="display:flex;align-items:center;gap:6px;margin-bottom:8px;padding:8px;background:var(--card);border:1px solid var(--border);border-radius:8px">
+      <select class="input pair-a" style="flex:1;font-size:.76rem">${opts}</select>
+      <span style="color:var(--muted);font-family:'Bebas Neue',cursive;font-size:1rem;flex-shrink:0">VS</span>
+      <select class="input pair-b" style="flex:1;font-size:.76rem">${opts}</select>
+      <button class="btn btn-danger btn-sm" onclick="this.closest('.bracket-pair-row').remove()" style="flex-shrink:0">✕</button>
+    </div>`;
+  }
+
+  const initPairs = Math.floor(newLosers.length / 2);
+
+  document.getElementById('mr-body').innerHTML = `
+    <div style="font-weight:700;font-size:.88rem;margin-bottom:10px">🔄 Agregar partidos al repechaje</div>
+    <div style="font-size:.72rem;color:var(--muted);margin-bottom:12px">Nuevos perdedores: <strong>${newLosers.map(id=>getEntryName(t,id)).join(', ')}</strong></div>
+    <div id="cr-pairs">${Array.from({length:initPairs},(_,i)=>pairRow(i)).join('')}</div>
+    <button class="btn btn-ghost btn-sm" style="margin-top:4px" id="cr-add-pair">+ Agregar partido</button>`;
+
+  setTimeout(() => {
+    document.getElementById('cr-add-pair')?.addEventListener('click', () => {
+      const opts = newLosers.map(id => `<option value="${id}">${getEntryName(t,id)}</option>`).join('');
+      document.getElementById('cr-pairs').insertAdjacentHTML('beforeend', `<div class="bracket-pair-row" style="display:flex;align-items:center;gap:6px;margin-bottom:8px;padding:8px;background:var(--card);border:1px solid var(--border);border-radius:8px">
+        <select class="input pair-a" style="flex:1;font-size:.76rem">${opts}</select>
+        <span style="color:var(--muted);font-family:'Bebas Neue',cursive;font-size:1rem;flex-shrink:0">VS</span>
+        <select class="input pair-b" style="flex:1;font-size:.76rem">${opts}</select>
+        <button class="btn btn-danger btn-sm" onclick="this.closest('.bracket-pair-row').remove()" style="flex-shrink:0">✕</button>
+      </div>`);
+    });
+  }, 10);
+
+  setTimeout(() => {
+    const rows = document.querySelectorAll('.bracket-pair-row');
+    rows.forEach((row, i) => {
+      const selA = row.querySelector('.pair-a');
+      const selB = row.querySelector('.pair-b');
+      if(newLosers[i*2])   selA.value = newLosers[i*2];
+      if(newLosers[i*2+1]) selB.value = newLosers[i*2+1];
+    });
+  }, 50);
+
+  document.getElementById('mr-submit').textContent = 'Agregar partidos';
+  document.getElementById('mr-submit').onclick = () => {
+    const pairs = [...document.querySelectorAll('.bracket-pair-row')];
+    const matches = pairs.map(row => ({
+      id: genId(),
+      a: row.querySelector('.pair-a').value,
+      b: row.querySelector('.pair-b').value,
+      scoreA: null, scoreB: null, palosA: null, palosB: null, winner: null
+    })).filter(m => m.a && m.b && m.a !== m.b);
+    if(!matches.length) { toast('Arma al menos un partido','err'); return; }
+    t.repechajeBracket[0].matches.push(...matches);
+    save(); closeModal('modal-match-result');
+    toast(`✓ ${matches.length} partido${matches.length!==1?'s':''} agregado${matches.length!==1?'s':''} al repechaje`);
+    switchTournamentTab('repechaje');
+  };
+  openModal('modal-match-result');
+}
+
 function startRepechajeFromCuartos(tId) {
   snapshotTournament(tId);
   const t = getTournament(tId);
@@ -9601,12 +9689,14 @@ function buildRepechajeTab(t) {
 
   const resetBtn = isTournamentAdmin() ? `<button class="btn btn-danger btn-sm" onclick="resetRepechaje('${t.id}')">🔄 Resetear repechaje</button>` : '';
   const autoFillBtn = isTournamentAdmin() && rounds.length ? `<button class="btn btn-ghost btn-sm" id="td-auto-results-repechaje">🎲 Auto-completar</button>` : '';
+  const newLosers = getNewRepechajeLosers(t);
+  const addLosersBtn = isTournamentAdmin() && newLosers.length >= 2 ? `<button class="btn btn-ghost btn-sm" style="border-color:rgba(245,158,11,.4);color:#f59e0b" onclick="addLosersToRepechaje('${t.id}')">➕ Agregar ${newLosers.length} perdedores</button>` : '';
 
   return `<div style="margin-bottom:10px;padding:10px 12px;background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.2);border-radius:10px">
     <div style="font-size:.72rem;color:#f59e0b;font-weight:700">🔄 REPECHAJE</div>
     <div style="font-size:.62rem;color:var(--muted);margin-top:2px">Los perdedores de cuartos compiten hasta que quede 1 → 5° finalista para la zona final.</div>
   </div>
-  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">${resetBtn}${autoFillBtn}</div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">${addLosersBtn}${resetBtn}${autoFillBtn}</div>
   <div class="bracket-wrap"><div class="bracket">${cols}</div></div>`;
 }
 
