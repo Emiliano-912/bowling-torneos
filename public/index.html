@@ -2058,7 +2058,7 @@ function openDetail(playerId, filterTrnId) {
   }
 
   // Build tournament filter chips (excluye torneos que no cuentan para promedio)
-  const trnsWithLines = (DB.tournaments||[]).filter(t => t.countsForAvg !== false && tournamentPlayerLines(t, playerId).length > 0);
+  const trnsWithLines = (DB.tournaments||[]).filter(t => tournamentPlayerLines(t, playerId).length > 0);
   if(filterTrnId && !trnsWithLines.some(t => t.id === filterTrnId)) filterTrnId = null;
   const trnChips = trnsWithLines.map(t => {
     const active = filterTrnId === t.id;
@@ -7848,11 +7848,12 @@ function buildBracketTab(t) {
     const rLineas = round.lineasPorJugador || 1;
     const lineasLabel = rLineas > 1 ? ` <span style="font-size:.52rem;color:var(--accent);font-family:'Nunito',sans-serif">(${rLineas}L)</span>` : '';
     const editLineasBtn = isTournamentAdmin() && !round.locked ? `<button class="btn btn-ghost btn-sm" style="padding:1px 6px;font-size:.55rem;margin-left:4px" onclick="event.stopPropagation();openEditRoundLineas('${t.id}',${ri},'bracketRounds')" title="Cambiar líneas">📏 ${rLineas}L</button>` : '';
+    const hcapBtn = isTournamentAdmin() ? `<button class="btn btn-ghost btn-sm" style="padding:1px 6px;font-size:.55rem;margin-left:2px" onclick="event.stopPropagation();openHcapByPlayer('${t.id}')" title="Editar hándicap">🏷</button>` : '';
     const deleteRoundBtn = isTournamentAdmin() && rounds.length > 1
       ? `<button class="btn btn-danger btn-sm" style="padding:2px 8px;font-size:.65rem;margin-top:4px;display:block" onclick="event.stopPropagation();deleteBracketRound('${t.id}',${ri})">🗑 Eliminar</button>`
       : '';
     return `<div class="bracket-round">
-      <div class="bracket-round-title">${round.name}${lineasLabel}${editLineasBtn}</div>
+      <div class="bracket-round-title">${round.name}${lineasLabel}${editLineasBtn}${hcapBtn}</div>
       ${matchCards}
       ${actionHtml}
       ${deleteRoundBtn}
@@ -8288,6 +8289,15 @@ function openDynBracketMatch(tId, ri, matchId, bracketSource) {
       m.palosB = totB;
       m.member_scores_a = scoresA;
       m.member_scores_b = scoresB;
+
+      const allFilled = scoresA.every(arr => arr.length >= lineas && arr.every(v => v > 0))
+                     && scoresB.every(arr => arr.length >= lineas && arr.every(v => v > 0));
+
+      if(!allFilled) {
+        m.winner = null; m.ptsA = null; m.ptsB = null;
+        save(); closeModal('modal-match-result'); renderTournamentDetail();
+        toast('✓ Puntaje parcial guardado (faltan líneas)'); return;
+      }
 
       if(winByPts) {
         const calc = calcBracketPointsPerLine(scoresA, scoresB, window._dbmConfig.ptsInd, window._dbmConfig.ptsEq);
@@ -9407,7 +9417,7 @@ function buildTournamentPlayerAverages(t) {
     const hcapBadge = hcap > 0
       ? `<span style="font-size:.55rem;color:var(--accent);background:rgba(59,130,246,.1);border:1px solid rgba(59,130,246,.25);padding:1px 5px;border-radius:5px">HCP+${hcap}</span>`
       : '';
-    return `<div class="team-row" style="align-items:center;gap:10px">
+    return `<div class="team-row" style="align-items:center;gap:10px;cursor:pointer" onclick="openDetail('${r.pid}','${t.id}')">
       <span style="font-family:'Bebas Neue',cursive;font-size:1.05rem;min-width:22px;text-align:right;color:var(--muted)">${i+1}</span>
       <div style="flex:1;min-width:0">
         <div style="font-weight:600;font-size:.82rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.name)}</div>
@@ -9754,7 +9764,9 @@ function buildRepechajeTab(t) {
     const allDone = round.matches.every(m => m.winner);
     const isLast = ri === rounds.length - 1;
     const isFinal = round.matches.length === 1;
-    const champion = allDone && isFinal ? getEntryName(t, round.matches[0].winner) : null;
+    const cuartosDone = (t.bracketRounds||[])[0]?.matches?.every(m => m.winner) ?? false;
+    const noMoreLosers = getNewRepechajeLosers(t).length === 0;
+    const champion = allDone && isFinal && cuartosDone && noMoreLosers ? getEntryName(t, round.matches[0].winner) : null;
 
     const matchCards = round.matches.map((m, mi) => {
       const nameA = m.a ? getEntryName(t, m.a) : '—';
@@ -9814,8 +9826,9 @@ function buildRepechajeTab(t) {
     const rLineas = round.lineasPorJugador || 1;
     const lineasLabel = rLineas > 1 ? ` <span style="font-size:.52rem;color:#f59e0b;font-family:'Nunito',sans-serif">(${rLineas}L)</span>` : '';
     const editLineasBtn = isTournamentAdmin() && !round.locked ? `<button class="btn btn-ghost btn-sm" style="padding:1px 6px;font-size:.55rem;margin-left:4px" onclick="event.stopPropagation();openEditRoundLineas('${t.id}',${ri},'repechajeBracket')" title="Cambiar líneas">📏 ${rLineas}L</button>` : '';
+    const repHcapBtn = isTournamentAdmin() ? `<button class="btn btn-ghost btn-sm" style="padding:1px 6px;font-size:.55rem;margin-left:2px" onclick="event.stopPropagation();openHcapByPlayer('${t.id}')" title="Editar hándicap">🏷</button>` : '';
     return `<div class="bracket-round">
-      <div class="bracket-round-title" style="color:#f59e0b;border-bottom-color:rgba(245,158,11,.3)">${round.name}${lineasLabel}${editLineasBtn}</div>
+      <div class="bracket-round-title" style="color:#f59e0b;border-bottom-color:rgba(245,158,11,.3)">${round.name}${lineasLabel}${editLineasBtn}${repHcapBtn}</div>
       ${matchCards}
       ${actionHtml}
     </div>`;
