@@ -1459,6 +1459,10 @@ function tournamentPlayerLines(t, playerId) {
           if(ms && ms[memberIdx] > 0) lines.push(ms[memberIdx]);
         });
       });
+      const spMember = t.sumaPalosMember?.[team.id]?.[playerId];
+      if(spMember) {
+        spMember.forEach(v => { if(v > 0) lines.push(v); });
+      }
       (t.bracketRounds||[]).forEach(round => {
         (round.matches||[]).forEach(bm => {
           let ms = null;
@@ -1491,10 +1495,6 @@ function tournamentPlayerLines(t, playerId) {
           }
         });
       });
-      const spMember = t.sumaPalosMember?.[team.id]?.[playerId];
-      if(spMember) {
-        spMember.forEach(v => { if(v > 0) lines.push(v); });
-      }
       if(t.zonaFinal) {
         Object.values(t.zonaFinal.matches||{}).forEach(m => {
           if(!m || m.pts_a === undefined) return;
@@ -1600,7 +1600,10 @@ function appConfirm(msg) {
 
 // ── MODAL ─────────────────────────────────────────────────────────────
 function openModal(id) {
-  document.getElementById(id).classList.add('open');
+  const el = document.getElementById(id);
+  el.classList.add('open');
+  const inner = el.querySelector('.modal');
+  if(inner) inner.scrollTop = 0;
   document.body.style.overflow = 'hidden';
 }
 function closeModal(id) {
