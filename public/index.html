@@ -9116,9 +9116,11 @@ function buildSumaPalosTab(t) {
     // Collect per-line column totals
     const colTotals = Array.from({length: lineas}, () => 0);
 
-    // Ex-miembros sustituidos que tienen líneas cargadas
+    // Ex-miembros sustituidos (desde substitutions + los que tienen líneas cargadas)
     const currentMembers = new Set(team.members||[]);
-    const exMembers = Object.keys(ms).filter(pid => !currentMembers.has(pid) && (ms[pid]||[]).some(v=>(v||0)>0));
+    const exFromSubs = (team.substitutions||[]).map(s => s.oldPid).filter(pid => !currentMembers.has(pid));
+    const exFromScores = Object.keys(ms).filter(pid => !currentMembers.has(pid) && (ms[pid]||[]).some(v=>(v||0)>0));
+    const exMembers = [...new Set([...exFromSubs, ...exFromScores])];
 
     function buildMemberRow(pid, isEx) {
       const p = DB.players.find(x=>x.id===pid);
