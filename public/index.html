@@ -1431,6 +1431,8 @@ function tournamentPlayerLines(t, playerId) {
   } else if((t.mode === 'equipo' || t.mode === 'trio')) {
     (t.teams||[]).forEach(team => {
       const memberIdx = (team.members||[]).indexOf(playerId);
+      const wasSubstituted = (team.substitutions||[]).some(s => s.oldPid === playerId);
+      if(memberIdx < 0 && !wasSubstituted) return;
 
       // Fases archivadas: usar snapshot teamMembers para saber quién jugó
       (t.zonasFase||[]).forEach(fase => {
@@ -1448,54 +1450,58 @@ function tournamentPlayerLines(t, playerId) {
         });
       });
 
-      // Current zones, bracket, zona final: solo si es miembro actual
-      if(memberIdx < 0) return;
-      (t.zones||[]).forEach(z => {
-        Object.values(z.matches||{}).forEach(m => {
-          if(!m || m.pts_a === undefined) return;
-          let ms = null;
-          if(m.id_a === team.id) ms = m.member_scores_a;
-          else if(m.id_b === team.id) ms = m.member_scores_b;
-          if(ms && ms[memberIdx] > 0) lines.push(ms[memberIdx]);
-        });
-      });
+      // Clasificación (sumaPalosMember) — disponible incluso para ex-miembros
       const spMember = t.sumaPalosMember?.[team.id]?.[playerId];
       if(spMember) {
         spMember.forEach(v => { if(v > 0) lines.push(v); });
       }
+      // Current zones: solo si es miembro actual
+      if(memberIdx >= 0) {
+        (t.zones||[]).forEach(z => {
+          Object.values(z.matches||{}).forEach(m => {
+            if(!m || m.pts_a === undefined) return;
+            let ms = null;
+            if(m.id_a === team.id) ms = m.member_scores_a;
+            else if(m.id_b === team.id) ms = m.member_scores_b;
+            if(ms && ms[memberIdx] > 0) lines.push(ms[memberIdx]);
+          });
+        });
+      }
+      // Bracket — usa memberOrder del match para ubicar al jugador
       (t.bracketRounds||[]).forEach(round => {
         (round.matches||[]).forEach(bm => {
-          let ms = null;
-          if(bm.a === team.id) ms = bm.member_scores_a;
-          else if(bm.b === team.id) ms = bm.member_scores_b;
+          let ms = null, order = null;
+          if(bm.a === team.id) { ms = bm.member_scores_a; order = bm.memberOrderA; }
+          else if(bm.b === team.id) { ms = bm.member_scores_b; order = bm.memberOrderB; }
           if(!ms) return;
-          if(ms[memberIdx]) {
-            const val = ms[memberIdx];
-            if(Array.isArray(val)) {
-              val.forEach(v => { if(v > 0) lines.push(v); });
-            } else if(val > 0) {
-              lines.push(val);
-            }
+          const idx = order ? order.indexOf(playerId) : memberIdx;
+          if(idx < 0 || !ms[idx]) return;
+          const val = ms[idx];
+          if(Array.isArray(val)) {
+            val.forEach(v => { if(v > 0) lines.push(v); });
+          } else if(val > 0) {
+            lines.push(val);
           }
         });
       });
+      // Repechaje — usa memberOrder del match para ubicar al jugador
       (t.repechajeBracket||[]).forEach(round => {
         (round.matches||[]).forEach(bm => {
-          let ms = null;
-          if(bm.a === team.id) ms = bm.member_scores_a;
-          else if(bm.b === team.id) ms = bm.member_scores_b;
+          let ms = null, order = null;
+          if(bm.a === team.id) { ms = bm.member_scores_a; order = bm.memberOrderA; }
+          else if(bm.b === team.id) { ms = bm.member_scores_b; order = bm.memberOrderB; }
           if(!ms) return;
-          if(ms[memberIdx]) {
-            const val = ms[memberIdx];
-            if(Array.isArray(val)) {
-              val.forEach(v => { if(v > 0) lines.push(v); });
-            } else if(val > 0) {
-              lines.push(val);
-            }
+          const idx = order ? order.indexOf(playerId) : memberIdx;
+          if(idx < 0 || !ms[idx]) return;
+          const val = ms[idx];
+          if(Array.isArray(val)) {
+            val.forEach(v => { if(v > 0) lines.push(v); });
+          } else if(val > 0) {
+            lines.push(val);
           }
         });
       });
-      if(t.zonaFinal) {
+      if(memberIdx >= 0 && t.zonaFinal) {
         Object.values(t.zonaFinal.matches||{}).forEach(m => {
           if(!m || m.pts_a === undefined) return;
           let ms2 = null;
@@ -1554,15 +1560,16 @@ function _getBracketRepechajeLines(t, pid) {
   const lines = [];
   if(t.mode !== 'equipo' && t.mode !== 'trio') return lines;
   (t.teams||[]).forEach(team => {
-    const idx = (team.members||[]).indexOf(pid);
-    if(idx < 0) return;
+    const memberIdx = (team.members||[]).indexOf(pid);
     [t.bracketRounds, t.repechajeBracket].forEach(rounds => {
       (rounds||[]).forEach(round => {
         (round.matches||[]).forEach(bm => {
-          let ms = null;
-          if(bm.a === team.id) ms = bm.member_scores_a;
-          else if(bm.b === team.id) ms = bm.member_scores_b;
-          if(!ms || !ms[idx]) return;
+          let ms = null, order = null;
+          if(bm.a === team.id) { ms = bm.member_scores_a; order = bm.memberOrderA; }
+          else if(bm.b === team.id) { ms = bm.member_scores_b; order = bm.memberOrderB; }
+          if(!ms) return;
+          const idx = order ? order.indexOf(pid) : memberIdx;
+          if(idx < 0 || !ms[idx]) return;
           const val = ms[idx];
           if(Array.isArray(val)) val.forEach(v => { if(v > 0) lines.push(v); });
           else if(val > 0) lines.push(val);
@@ -3871,6 +3878,24 @@ async function confirmSubstitute(tId, teamId, oldPid, newPid) {
   if(t.sumaPalosMember?.[teamId]?.[oldPid] && !t.sumaPalosMember[teamId][newPid]) {
     t.sumaPalosMember[teamId][newPid] = Array(t.sumaPalosMember[teamId][oldPid].length).fill(0);
   }
+  // Actualizar memberOrder en matches de bracket/repechaje sin resultado
+  function _updateMatchOrders(rounds) {
+    (rounds||[]).forEach(round => {
+      (round.matches||[]).forEach(m => {
+        if(m.winner) return;
+        ['memberOrderA','memberOrderB'].forEach((key, ki) => {
+          const mTeamId = ki === 0 ? m.a : m.b;
+          if(mTeamId !== teamId) return;
+          if(m[key]) {
+            const oi = m[key].indexOf(oldPid);
+            if(oi >= 0) m[key][oi] = newPid;
+          }
+        });
+      });
+    });
+  }
+  _updateMatchOrders(t.bracketRounds);
+  _updateMatchOrders(t.repechajeBracket);
   const names = (team.members||[]).map(pid => { const p = DB.players.find(x=>x.id===pid); return p ? p.name.split(',')[0].trim().split(' ')[0] : '?'; });
   team.name = names.join(' & ');
   save(); closeModal('modal-match-result'); renderTournamentDetail();
@@ -6493,8 +6518,10 @@ function autoFillBracket(tId) {
       const winByPts = t.bracketWinBy === 'puntos';
       const teamA = (t.teams||[]).find(x=>x.id===m.a);
       const teamB = (t.teams||[]).find(x=>x.id===m.b);
-      const msA = (teamA?.members||[]).map(() => Array.from({length:lineas}, ()=>randPalos()));
-      const msB = (teamB?.members||[]).map(() => Array.from({length:lineas}, ()=>randPalos()));
+      if(!m.memberOrderA) m.memberOrderA = [...(teamA?.members||[])];
+      if(!m.memberOrderB) m.memberOrderB = [...(teamB?.members||[])];
+      const msA = m.memberOrderA.map(() => Array.from({length:lineas}, ()=>randPalos()));
+      const msB = m.memberOrderB.map(() => Array.from({length:lineas}, ()=>randPalos()));
       const totA = msA.reduce((s, arr) => s + arr.reduce((a,v)=>a+v,0), 0);
       let totB = msB.reduce((s, arr) => s + arr.reduce((a,v)=>a+v,0), 0);
       if(!winByPts && totA === totB) { msB[0][0]++; totB++; }
@@ -7802,15 +7829,16 @@ async function deleteBracketRound(tId, roundIdx) {
 // ── Dynamic round-by-round bracket ────────────────────────────────────
 // t.bracketRounds = [{id, name, matches:[{id,a,b,scoreA,scoreB,winner,palosA,palosB}], locked, advancedIds:[]}]
 
-function _buildBracketSlotMembers(t, teamId, memberScores, lineas) {
+function _buildBracketSlotMembers(t, teamId, memberScores, lineas, memberOrder) {
   const isTeam = (t.mode === 'equipo' || t.mode === 'trio' || t.mode === 'sexteto');
   if(!isTeam || !teamId) return '';
   const team = (t.teams||[]).find(x=>x.id===teamId);
   if(!team || !(team.members||[]).length) return '';
-  const stored = _migrateScores(memberScores, (team.members||[]).length, lineas);
+  const members = memberOrder || team.members;
+  const stored = _migrateScores(memberScores, members.length, lineas);
   const hasAny = stored.some(arr => arr.some(v => v > 0));
   if(!hasAny) return '';
-  const rows = (team.members||[]).map((pid, mi) => {
+  const rows = members.map((pid, mi) => {
     const p = DB.players.find(x=>x.id===pid);
     const shortName = p ? p.name.split(' ')[0] : '?';
     const memberLines = stored[mi] || [];
@@ -7862,8 +7890,8 @@ function buildBracketTab(t) {
       const showPts = t.bracketWinBy === 'puntos' && m.ptsA != null;
       const ptsLabelA = showPts ? `<span style="font-size:.6rem;color:var(--accent);margin-left:4px;font-weight:700">${m.ptsA%1?m.ptsA.toFixed(1):m.ptsA}pts</span>` : '';
       const ptsLabelB = showPts ? `<span style="font-size:.6rem;color:var(--accent);margin-left:4px;font-weight:700">${m.ptsB%1?m.ptsB.toFixed(1):m.ptsB}pts</span>` : '';
-      const membersA = _buildBracketSlotMembers(t, m.a, m.member_scores_a, rLineasVal);
-      const membersB = _buildBracketSlotMembers(t, m.b, m.member_scores_b, rLineasVal);
+      const membersA = _buildBracketSlotMembers(t, m.a, m.member_scores_a, rLineasVal, m.memberOrderA);
+      const membersB = _buildBracketSlotMembers(t, m.b, m.member_scores_b, rLineasVal, m.memberOrderB);
       const canReorder = isTournamentAdmin() && !round.locked && round.matches.length > 1;
       const moveUp = canReorder && mi > 0 ? `<button class="btn btn-ghost btn-sm" style="padding:1px 4px;font-size:.6rem;line-height:1" onclick="event.stopPropagation();swapBracketMatch('${t.id}',${ri},${mi},${mi-1},'bracketRounds')" title="Subir">▲</button>` : '';
       const moveDown = canReorder && mi < round.matches.length-1 ? `<button class="btn btn-ghost btn-sm" style="padding:1px 4px;font-size:.6rem;line-height:1" onclick="event.stopPropagation();swapBracketMatch('${t.id}',${ri},${mi},${mi+1},'bracketRounds')" title="Bajar">▼</button>` : '';
@@ -8177,12 +8205,14 @@ function openBracketMatchView(tId, ri, matchId) {
     ${esc(nameA)} <span style="color:var(--muted)">vs</span> ${esc(nameB)}</div>`;
 
   if(isTeam && teamA && teamB) {
-    const storedA = _migrateScores(m.member_scores_a, (teamA.members||[]).length, lineas);
-    const storedB = _migrateScores(m.member_scores_b, (teamB.members||[]).length, lineas);
+    const roOrderA = m.memberOrderA || teamA.members || [];
+    const roOrderB = m.memberOrderB || teamB.members || [];
+    const storedA = _migrateScores(m.member_scores_a, roOrderA.length, lineas);
+    const storedB = _migrateScores(m.member_scores_b, roOrderB.length, lineas);
 
-    function readonlyRows(team, stored, isWinner) {
+    function readonlyRows(members, stored, isWinner) {
       const lineTots = Array.from({length:lineas}, ()=>0);
-      const rows = (team.members||[]).map((pid, mi) => {
+      const rows = (members||[]).map((pid, mi) => {
         const p = DB.players.find(x=>x.id===pid);
         const hc = getHcap(t, pid, true);
         const hcTag = hc > 0 ? ` <span style="font-size:.48rem;color:var(--accent)">+${hc}</span>` : '';
@@ -8228,7 +8258,7 @@ function openBracketMatchView(tId, ri, matchId) {
           <span style="margin-left:auto;font-family:'Bebas Neue',cursive;font-size:1.3rem;color:${colorA}">${m.palosA}</span>
         </div>
         ${roHeaderRow}
-        ${readonlyRows(teamA, storedA, winA)}
+        ${readonlyRows(roOrderA, storedA, winA)}
       </div>
       <div style="margin-bottom:6px">
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
@@ -8236,7 +8266,7 @@ function openBracketMatchView(tId, ri, matchId) {
           <span style="margin-left:auto;font-family:'Bebas Neue',cursive;font-size:1.3rem;color:${colorB}">${m.palosB}</span>
         </div>
         ${roHeaderRow}
-        ${readonlyRows(teamB, storedB, winB)}
+        ${readonlyRows(roOrderB, storedB, winB)}
       </div>`;
   } else {
     // Individual: just show totals
@@ -8282,10 +8312,15 @@ function openDynBracketMatch(tId, ri, matchId, bracketSource) {
   if(isTeam && teamA && teamB) {
     // ── Per-member, per-line inputs ──
     const winByPts = t.bracketWinBy === 'puntos';
-    // member_scores stored as array of arrays: [[l1,l2],[l1,l2]] per member
-    // Migrate old flat format: if stored as [n1, n2] (flat numbers), convert
-    const storedA = _migrateScores(m.member_scores_a, (teamA.members||[]).length, lineas);
-    const storedB = _migrateScores(m.member_scores_b, (teamB.members||[]).length, lineas);
+
+    // Orden de miembros por match (permite reordenar por instancia)
+    if(!m.memberOrderA) m.memberOrderA = [...(teamA.members||[])];
+    if(!m.memberOrderB) m.memberOrderB = [...(teamB.members||[])];
+    const orderA = m.memberOrderA;
+    const orderB = m.memberOrderB;
+
+    const storedA = _migrateScores(m.member_scores_a, orderA.length, lineas);
+    const storedB = _migrateScores(m.member_scores_b, orderB.length, lineas);
 
     const teamLabelA = t.mode==='trio'?'Trío':t.mode==='sexteto'?'Sexteto':'Pareja';
     const teamLabelB = teamLabelA;
@@ -8311,7 +8346,11 @@ function openDynBracketMatch(tId, ri, matchId, bracketSource) {
             oninput="dbmCalcTotals()">`;
         }).join('');
         const subtotalId = `dbm-sub-${side}-${mi}`;
-        return `<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;padding:4px 0;border-bottom:1px solid var(--border)">
+        const upBtn = mi > 0 ? `<button onclick="dbmSwapMember('${side}',${mi},${mi-1})" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.6rem;padding:0 1px;line-height:1" title="Subir">▲</button>` : '';
+        const downBtn = mi < members.length-1 ? `<button onclick="dbmSwapMember('${side}',${mi},${mi+1})" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.6rem;padding:0 1px;line-height:1" title="Bajar">▼</button>` : '';
+        const reorderBtns = `<div style="display:flex;flex-direction:column;gap:0px;flex-shrink:0">${upBtn}${downBtn}</div>`;
+        return `<div class="dbm-member-row" data-side="${side}" data-mi="${mi}" style="display:flex;align-items:center;gap:6px;margin-bottom:6px;padding:4px 0;border-bottom:1px solid var(--border)">
+          ${reorderBtns}
           <span style="flex:1;font-size:.74rem;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(pName)} ${hcTag}</span>
           <div style="display:flex;gap:3px;flex-shrink:0">${inputs}</div>
           <span id="${subtotalId}" style="font-family:'Bebas Neue',cursive;font-size:1rem;color:var(--accent);min-width:32px;text-align:right;flex-shrink:0">—</span>
@@ -8319,8 +8358,8 @@ function openDynBracketMatch(tId, ri, matchId, bracketSource) {
       }).join('');
     }
 
-    const rowsA = memberLineInputs(teamA.members, storedA, 'a');
-    const rowsB = memberLineInputs(teamB.members, storedB, 'b');
+    const rowsA = memberLineInputs(orderA, storedA, 'a');
+    const rowsB = memberLineInputs(orderB, storedB, 'b');
 
     const colW = lineas > 2 ? '48px' : '60px';
     const lineHeaderRow = lineas > 1 ? `<div style="display:flex;align-items:center;gap:6px;padding:2px 0">
@@ -8382,16 +8421,18 @@ function openDynBracketMatch(tId, ri, matchId, bracketSource) {
       winByPts,
       ptsInd: t.bracketPtsInd ?? t.ptsIndividual ?? 1,
       ptsEq: t.bracketPtsEq ?? t.ptsEquipo ?? 2,
-      membersA: (teamA.members||[]).length,
-      membersB: (teamB.members||[]).length
+      membersA: orderA.length,
+      membersB: orderB.length,
+      tId, ri: parseInt(ri), matchId, bracketSource: bracketSource||'bracketRounds',
+      lineas
     };
 
     setTimeout(() => dbmCalcTotals(), 50);
 
     document.getElementById('mr-submit').textContent = 'Guardar resultado';
     document.getElementById('mr-submit').onclick = () => {
-      const scoresA = _collectBracketScores('a', (teamA.members||[]).length, lineas);
-      const scoresB = _collectBracketScores('b', (teamB.members||[]).length, lineas);
+      const scoresA = _collectBracketScores('a', orderA.length, lineas);
+      const scoresB = _collectBracketScores('b', orderB.length, lineas);
       const totA = scoresA.reduce((s, arr) => s + arr.reduce((a,v)=>a+v,0), 0);
       const totB = scoresB.reduce((s, arr) => s + arr.reduce((a,v)=>a+v,0), 0);
       if(totA === 0 && totB === 0) { toast('Ingresá al menos un puntaje','err'); return; }
@@ -8477,6 +8518,29 @@ function _collectBracketScores(side, memberCount, lineas) {
     result[mi][li] = parseInt(el.value) || 0;
   });
   return result;
+}
+
+function dbmSwapMember(side, fromIdx, toIdx) {
+  const cfg = window._dbmConfig;
+  if(!cfg) return;
+  const t = getTournament(cfg.tId);
+  const srcRounds = cfg.bracketSource === 'repechajeBracket' ? (t?.repechajeBracket||[]) : (t?.bracketRounds||[]);
+  const round = srcRounds[cfg.ri];
+  const m = round?.matches?.find(x=>x.id===cfg.matchId);
+  if(!m) return;
+  const orderKey = side === 'a' ? 'memberOrderA' : 'memberOrderB';
+  const scoresKey = side === 'a' ? 'member_scores_a' : 'member_scores_b';
+  const order = m[orderKey];
+  if(!order || fromIdx < 0 || toIdx < 0 || fromIdx >= order.length || toIdx >= order.length) return;
+  // Recoger scores actuales del DOM antes de swapear
+  const nMembers = side === 'a' ? cfg.membersA : cfg.membersB;
+  const currentScores = _collectBracketScores(side, nMembers, cfg.lineas);
+  // Swapear orden y scores
+  const tmpO = order[fromIdx]; order[fromIdx] = order[toIdx]; order[toIdx] = tmpO;
+  const tmpS = currentScores[fromIdx]; currentScores[fromIdx] = currentScores[toIdx]; currentScores[toIdx] = tmpS;
+  m[scoresKey] = currentScores;
+  // Reabrir el modal con los datos actualizados
+  openDynBracketMatch(cfg.tId, cfg.ri, cfg.matchId, cfg.bracketSource === 'repechajeBracket' ? 'repechajeBracket' : undefined);
 }
 
 function dbmCalcTotals() {
@@ -8961,7 +9025,7 @@ function buildSumaPalosTab(t) {
   function teamTotal(teamId, members) {
     const ms = t.sumaPalosMember[teamId] || {};
     let sum = 0;
-    (members||[]).forEach(pid => {
+    Object.keys(ms).forEach(pid => {
       (ms[pid]||[]).forEach(v => { sum += (v||0); });
     });
     if(sum === 0 && t.sumaPalosScores?.[teamId]) {
@@ -8987,9 +9051,8 @@ function buildSumaPalosTab(t) {
   ranked.forEach(r => {
     if(r.total > bestTeamTotal) { bestTeamTotal = r.total; bestTeamId = r.id; }
     const ms = t.sumaPalosMember[r.id] || {};
-    // Per-column totals for this team
     const cols = Array.from({length: lineas}, () => 0);
-    (r.members||[]).forEach(pid => {
+    Object.keys(ms).forEach(pid => {
       (ms[pid]||[]).forEach((v,li) => {
         if((v||0) > bestIndLine) { bestIndLine = v; bestIndPid = pid; bestIndTeamId = r.id; }
         if(li < lineas) cols[li] += (v||0);
@@ -9006,7 +9069,7 @@ function buildSumaPalosTab(t) {
   let bestIndTotalTeamId = null;
   ranked.forEach(r => {
     const ms = t.sumaPalosMember[r.id] || {};
-    (r.members||[]).forEach(pid => {
+    Object.keys(ms).forEach(pid => {
       const pT = (ms[pid]||[]).reduce((s,v)=>s+(v||0),0);
       if(pT > bestIndTotal) { bestIndTotal = pT; bestIndTotalPid = pid; bestIndTotalTeamId = r.id; }
     });
@@ -9053,7 +9116,11 @@ function buildSumaPalosTab(t) {
     // Collect per-line column totals
     const colTotals = Array.from({length: lineas}, () => 0);
 
-    const memberRows = (team.members||[]).map(pid => {
+    // Ex-miembros sustituidos que tienen líneas cargadas
+    const currentMembers = new Set(team.members||[]);
+    const exMembers = Object.keys(ms).filter(pid => !currentMembers.has(pid) && (ms[pid]||[]).some(v=>(v||0)>0));
+
+    function buildMemberRow(pid, isEx) {
       const p = DB.players.find(x=>x.id===pid);
       const pName = p ? p.name : '?';
       const hc = getHcap(t, pid);
@@ -9062,12 +9129,13 @@ function buildSumaPalosTab(t) {
       const pLines = ms[pid] || [];
       const pTotal = pLines.reduce((s,v)=>s+(v||0), 0);
       const isBestPlayer = pid === bestIndTotalPid && r.id === bestIndTotalTeamId && bestIndTotal > 0;
+      const exBadge = isEx ? `<span style="font-size:.45rem;color:var(--muted);background:rgba(255,255,255,.05);border:1px solid var(--border);padding:0 4px;border-radius:3px;margin-left:2px">SUPLIDO</span>` : '';
 
       const lineSlots = Array.from({length: Math.max(lineas, pLines.length)}, (_, li) => {
         const val = pLines[li] || 0;
         if(li < lineas) colTotals[li] += (val||0);
         const isBest = val > 0 && val === bestIndLine && pid === bestIndPid && r.id === bestIndTeamId;
-        if(canEdit) {
+        if(canEdit && !isEx) {
           return `<input class="input sp-member-line" type="number" min="0" max="300"
             data-tid="${t.id}" data-teamid="${r.id}" data-pid="${pid}" data-li="${li}"
             value="${val||''}" placeholder="—"
@@ -9079,16 +9147,19 @@ function buildSumaPalosTab(t) {
         }
       }).join('');
 
-      return `<div style="padding:6px 0;border-bottom:1px solid var(--border)">
+      return `<div style="padding:6px 0;border-bottom:1px solid var(--border)${isEx?';opacity:.7':''}">
         <div style="display:flex;align-items:center;gap:4px;margin-bottom:4px">
           <span class="badge ${CAT_CLS[cat]||''}" style="font-size:.48rem;padding:1px 4px">${cat}</span>
           <span style="font-size:.76rem;font-weight:600">${esc(pName)}</span>
-          ${hcBadge}
+          ${hcBadge}${exBadge}
           <span class="sp-m-total-${r.id}-${pid}" style="margin-left:auto;font-family:'Bebas Neue',cursive;font-size:1.25rem;color:${isBestPlayer?'#fb923c':'var(--accent)'};flex-shrink:0">${pTotal||'—'}</span>
         </div>
         <div style="display:flex;gap:3px">${lineSlots}</div>
       </div>`;
-    }).join('');
+    }
+
+    const memberRows = (team.members||[]).map(pid => buildMemberRow(pid, false)).join('')
+      + exMembers.map(pid => buildMemberRow(pid, true)).join('');
 
     // Team totals row per column
     const teamTotalSum = colTotals.reduce((s,v)=>s+v, 0);
@@ -9402,18 +9473,23 @@ function buildTournamentPlayerAverages(t) {
   } else if((t.mode === 'equipo' || t.mode === 'trio') && t.format === 'suma+bracket') {
     // suma+bracket: classification lines + bracket match lines
     (t.teams||[]).forEach(team => {
-      (team.members||[]).forEach(pid => {
+      // Todos los pids: actuales + ex-miembros con líneas de clasificación
+      const allPids = new Set(team.members||[]);
+      if(t.sumaPalosMember?.[team.id]) {
+        Object.keys(t.sumaPalosMember[team.id]).forEach(pid => allPids.add(pid));
+      }
+      allPids.forEach(pid => {
         let allLines = [];
-        // Classification lines (sumaPalosMember)
         const spLines = t.sumaPalosMember?.[team.id]?.[pid];
         if(spLines) spLines.forEach(v => { if(v > 0) allLines.push(v); });
-        // Bracket match lines
+        const memberIdx = (team.members||[]).indexOf(pid);
         (t.bracketRounds||[]).forEach(round => {
           (round.matches||[]).forEach(m => {
             const side = m.a===team.id?'a':m.b===team.id?'b':null;
             if(!side) return;
             const ms = side==='a'?(m.member_scores_a||[]):(m.member_scores_b||[]);
-            const idx = (team.members||[]).indexOf(pid);
+            const order = side==='a'?m.memberOrderA:m.memberOrderB;
+            const idx = order ? order.indexOf(pid) : memberIdx;
             if(idx>=0 && ms[idx]) {
               const val = ms[idx];
               if(Array.isArray(val)) { val.forEach(v => { if(v>0) allLines.push(v); }); }
@@ -9472,13 +9548,14 @@ function buildTournamentPlayerAverages(t) {
           (team.members||[]).forEach((pid, i) => { _addLine(pid, memberScores[i] || 0, team.name); });
         });
       }
-      // Bracket matches
+      // Bracket matches — usa memberOrder del match si existe
       (t.bracketRounds||[]).forEach(round => {
         (round.matches||[]).forEach(bm => {
           const side = bm.a === team.id ? 'a' : bm.b === team.id ? 'b' : null;
           if(!side) return;
           const ms = side==='a' ? (bm.member_scores_a||[]) : (bm.member_scores_b||[]);
-          (team.members||[]).forEach((pid, i) => {
+          const order = side==='a' ? (bm.memberOrderA||team.members||[]) : (bm.memberOrderB||team.members||[]);
+          order.forEach((pid, i) => {
             const val = ms[i];
             if(!val) return;
             const scores = Array.isArray(val) ? val.filter(v=>v>0) : (val > 0 ? [val] : []);
@@ -9486,13 +9563,14 @@ function buildTournamentPlayerAverages(t) {
           });
         });
       });
-      // Repechaje matches
+      // Repechaje matches — usa memberOrder del match si existe
       (t.repechajeBracket||[]).forEach(round => {
         (round.matches||[]).forEach(bm => {
           const side = bm.a === team.id ? 'a' : bm.b === team.id ? 'b' : null;
           if(!side) return;
           const ms = side==='a' ? (bm.member_scores_a||[]) : (bm.member_scores_b||[]);
-          (team.members||[]).forEach((pid, i) => {
+          const order = side==='a' ? (bm.memberOrderA||team.members||[]) : (bm.memberOrderB||team.members||[]);
+          order.forEach((pid, i) => {
             const val = ms[i];
             if(!val) return;
             const scores = Array.isArray(val) ? val.filter(v=>v>0) : (val > 0 ? [val] : []);
@@ -9500,9 +9578,9 @@ function buildTournamentPlayerAverages(t) {
           });
         });
       });
-      // Classification lines (sumaPalosMember)
+      // Classification lines (sumaPalosMember) — incluye ex-miembros sustituidos
       if(t.sumaPalosMember?.[team.id]) {
-        (team.members||[]).forEach(pid => {
+        Object.keys(t.sumaPalosMember[team.id]).forEach(pid => {
           (t.sumaPalosMember[team.id][pid]||[]).forEach(v => { _addLine(pid, v, team.name); });
         });
       }
@@ -9891,8 +9969,8 @@ function buildRepechajeTab(t) {
       const showPts = t.bracketWinBy === 'puntos' && m.ptsA != null;
       const ptsLabelA = showPts ? `<span style="font-size:.6rem;color:#f59e0b;margin-left:4px;font-weight:700">${m.ptsA%1?m.ptsA.toFixed(1):m.ptsA}pts</span>` : '';
       const ptsLabelB = showPts ? `<span style="font-size:.6rem;color:#f59e0b;margin-left:4px;font-weight:700">${m.ptsB%1?m.ptsB.toFixed(1):m.ptsB}pts</span>` : '';
-      const membersA = _buildBracketSlotMembers(t, m.a, m.member_scores_a, rLineasVal);
-      const membersB = _buildBracketSlotMembers(t, m.b, m.member_scores_b, rLineasVal);
+      const membersA = _buildBracketSlotMembers(t, m.a, m.member_scores_a, rLineasVal, m.memberOrderA);
+      const membersB = _buildBracketSlotMembers(t, m.b, m.member_scores_b, rLineasVal, m.memberOrderB);
       const canReorder = isTournamentAdmin() && !round.locked && round.matches.length > 1;
       const moveUp = canReorder && mi > 0 ? `<button class="btn btn-ghost btn-sm" style="padding:1px 4px;font-size:.6rem;line-height:1" onclick="event.stopPropagation();swapBracketMatch('${t.id}',${ri},${mi},${mi-1},'repechajeBracket')" title="Subir">▲</button>` : '';
       const moveDown = canReorder && mi < round.matches.length-1 ? `<button class="btn btn-ghost btn-sm" style="padding:1px 4px;font-size:.6rem;line-height:1" onclick="event.stopPropagation();swapBracketMatch('${t.id}',${ri},${mi},${mi+1},'repechajeBracket')" title="Bajar">▼</button>` : '';
@@ -9966,9 +10044,11 @@ function bindRepechajeTab(t) {
       const teamA = (t.teams||[]).find(x=>x.id===m.a);
       const teamB = (t.teams||[]).find(x=>x.id===m.b);
       if(!teamA || !teamB) return;
+      if(!m.memberOrderA) m.memberOrderA = [...(teamA.members||[])];
+      if(!m.memberOrderB) m.memberOrderB = [...(teamB.members||[])];
       const lineas = lastRound.lineasPorJugador || 1;
-      const msA = (teamA.members||[]).map(() => Array.from({length:lineas},()=>Math.floor(Math.random()*131)+140));
-      const msB = (teamB.members||[]).map(() => Array.from({length:lineas},()=>Math.floor(Math.random()*131)+140));
+      const msA = m.memberOrderA.map(() => Array.from({length:lineas},()=>Math.floor(Math.random()*131)+140));
+      const msB = m.memberOrderB.map(() => Array.from({length:lineas},()=>Math.floor(Math.random()*131)+140));
       m.member_scores_a = msA;
       m.member_scores_b = msB;
       m.palosA = msA.flat().reduce((s,v)=>s+v,0);
