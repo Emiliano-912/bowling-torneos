@@ -2126,7 +2126,8 @@ function openDetail(playerId, filterTrnId) {
   if(filterTrnId) {
     const t = trnsWithLines.find(x=>x.id===filterTrnId);
     if(t) {
-      s = tournamentPlayerLines(t, playerId);
+      const hcap = getHcap(t, playerId);
+      s = tournamentPlayerLines(t, playerId).map(v => Math.max(0, v - hcap));
     } else {
       s = [];
     }
