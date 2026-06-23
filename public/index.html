@@ -4014,8 +4014,11 @@ function buildSingleFase(t, ph, phIdx) {
   // Find participants for this phase
   let pool;
   if(isArrastre) {
-    const phasePlayerIds = Object.keys(ph.scores||{});
-    pool = phasePlayerIds.length > 0 ? phasePlayerIds : enrolled;
+    if(ph.pool && ph.pool.length) {
+      pool = ph.pool;
+    } else {
+      pool = enrolled;
+    }
   } else if(ph.pool && ph.pool.length) {
     // Use stored ranked pool order
     pool = ph.pool;
@@ -6555,14 +6558,11 @@ function autoFillFase(tId, phIdx) {
   const ph = (t.phases||[])[phIdx];
   if(!ph) return;
 
-  // Determine pool: for arrastre with reduced phases, use scores keys
   let pool;
-  const isArrastre = t.indTipo === 'arrastre';
-  const phasePlayerIds = Object.keys(ph.scores||{});
-  if(isArrastre && phasePlayerIds.length > 0) {
-    pool = phasePlayerIds;
+  if(ph.pool && ph.pool.length) {
+    pool = ph.pool;
   } else {
-    pool = (ph.pool && ph.pool.length) ? ph.pool : t.participants||[];
+    pool = t.participants||[];
   }
   if(!pool.length) { toast('No hay participantes en esta fase','err'); return; }
 
