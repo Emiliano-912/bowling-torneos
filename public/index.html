@@ -3321,7 +3321,7 @@ function buildTeamsTab(t) {
             return `<div style="display:flex;align-items:center;gap:5px;background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:4px 8px">
               <span style="font-family:'Bebas Neue',cursive;font-size:1rem;color:var(--muted);min-width:14px;text-align:center">${mi+1}</span>
               ${isTournamentAdmin() ? `<div style="display:flex;flex-direction:column;gap:0px;flex-shrink:0">${upBtn}${downBtn}</div>` : ''}
-              <span class="badge ${CAT_CLS[p.cat]||''}" style="font-size:.52rem;padding:1px 5px">${p.cat}</span>
+              <span class="badge ${CAT_CLS[getPlayerCatInTournament(t,p.id)]||''}" style="font-size:.52rem;padding:1px 5px">${getPlayerCatInTournament(t,p.id)}</span>
               ${hcBadge}
               <span style="font-size:.76rem;font-weight:600;flex:1">${esc(p.name)}</span>
               ${isTournamentAdmin() ? `<button onclick="event.stopPropagation();openSubstitutePlayer('${t.id}','${team.id}','${p.id}')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.7rem;padding:0 2px;line-height:1" title="Sustituir">🔄</button><button onclick="event.stopPropagation();removeTeamMember('${t.id}','${team.id}','${p.id}')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.7rem;padding:0 2px;line-height:1" title="Quitar">✕</button>` : ''}
@@ -3392,9 +3392,10 @@ function openHcapByCategory(tId) {
   allPids.forEach(pid => {
     const p = DB.players.find(x=>x.id===pid);
     if(!p) return;
-    if(!cats[p.cat]) cats[p.cat] = { pids: [], hcaps: new Set() };
-    cats[p.cat].pids.push(pid);
-    cats[p.cat].hcaps.add(getHcap(t, pid));
+    const pCat = getPlayerCatInTournament(t, pid);
+    if(!cats[pCat]) cats[pCat] = { pids: [], hcaps: new Set() };
+    cats[pCat].pids.push(pid);
+    cats[pCat].hcaps.add(getHcap(t, pid));
   });
   const catOrder = ['A','B','C','DAMAS A','DAMAS B'];
   const catKeys = catOrder.filter(c => cats[c]).concat(Object.keys(cats).filter(c => !catOrder.includes(c)));
@@ -3447,7 +3448,7 @@ function openHcapByPlayer(tId) {
   (t.teams||[]).forEach(team => {
     (team.members||[]).forEach(pid => {
       const p = DB.players.find(x=>x.id===pid);
-      if(p) allPlayers.push({ pid, name: p.name, cat: p.cat, team: team.name, hcap: getHcap(t, pid) });
+      if(p) allPlayers.push({ pid, name: p.name, cat: getPlayerCatInTournament(t, pid), team: team.name, hcap: getHcap(t, pid) });
     });
   });
   if(!allPlayers.length) { toast('No hay jugadores en los equipos','err'); return; }
@@ -3492,7 +3493,7 @@ function openBracketHcapByPlayer(tId) {
   (t.teams||[]).forEach(team => {
     (team.members||[]).forEach(pid => {
       const p = DB.players.find(x=>x.id===pid);
-      if(p) allPlayers.push({ pid, name: p.name, cat: p.cat, team: team.name, hcap: getHcap(t, pid, true) });
+      if(p) allPlayers.push({ pid, name: p.name, cat: getPlayerCatInTournament(t, pid), team: team.name, hcap: getHcap(t, pid, true) });
     });
   });
   if(!allPlayers.length) { toast('No hay jugadores en los equipos','err'); return; }
@@ -4002,7 +4003,7 @@ function buildArrastreView(t) {
     }
     const hcap = getHcap(t, pid);
     const spread = allLines.length >= 2 ? Math.max(...allLines) - Math.min(...allLines) : 0;
-    return { pid, name: p?p.name:pid, cat: p?p.cat:'?', totalPalos, totalLines, perPhase, hcap, spread };
+    return { pid, name: p?p.name:pid, cat: getPlayerCatInTournament(t, pid), totalPalos, totalLines, perPhase, hcap, spread };
   }).filter(r => r.totalPalos > 0)
     .sort((a,b) => b.totalPalos - a.totalPalos || a.hcap - b.hcap || a.spread - b.spread);
 
@@ -9166,7 +9167,7 @@ function buildSumaPalosTab(t) {
       const pName = p ? p.name : '?';
       const hc = getHcap(t, pid);
       const hcBadge = hc > 0 ? `<span style="font-size:.5rem;color:var(--accent);background:rgba(59,130,246,.1);border:1px solid rgba(59,130,246,.25);padding:0 4px;border-radius:3px;margin-left:3px">+${hc}</span>` : '';
-      const cat = p ? p.cat : '?';
+      const cat = getPlayerCatInTournament(t, pid);
       const pLines = ms[pid] || [];
       const pTotal = pLines.reduce((s,v)=>s+(v||0), 0);
       const isBestPlayer = pid === bestIndTotalPid && r.id === bestIndTotalTeamId && bestIndTotal > 0;
@@ -9484,7 +9485,7 @@ function buildTournamentPlayerAverages(t) {
         const total = lines.reduce((s,v)=>s+v,0);
         const avg = total / lines.length;
         const genAvg = p?.scores?.length ? avgOf(p.scores) : null;
-        rows.push({ pid, name: p?p.name:pid, cat: p?p.cat:'?', lines: lines.length, total, avg, genAvg });
+        rows.push({ pid, name: p?p.name:pid, cat: getPlayerCatInTournament(t, pid), lines: lines.length, total, avg, genAvg });
       });
     } else {
     const enrolled = t.participants || [];
@@ -9495,7 +9496,7 @@ function buildTournamentPlayerAverages(t) {
       const total = lines.reduce((s,v)=>s+v,0);
       const avg   = total / lines.length;
       const genAvg = p?.scores?.length ? avgOf(p.scores) : null;
-      rows.push({ pid, name: p?p.name:pid, cat: p?p.cat:'?', lines: lines.length, total, avg, genAvg });
+      rows.push({ pid, name: p?p.name:pid, cat: getPlayerCatInTournament(t, pid), lines: lines.length, total, avg, genAvg });
     });
     }
   } else if(t.mode === 'sexteto') {
@@ -9508,7 +9509,7 @@ function buildTournamentPlayerAverages(t) {
         if(!pLines.length) return;
         const p = DB.players.find(x=>x.id===pid);
         const total = pLines.reduce((s,v)=>s+v,0);
-        rows.push({ pid, name: p?p.name:pid, cat: p?p.cat:'?', lines: pLines.length, total, avg: total/pLines.length, genAvg: p?.scores?.length?avgOf(p.scores):null, teamName: team.name });
+        rows.push({ pid, name: p?p.name:pid, cat: getPlayerCatInTournament(t, pid), lines: pLines.length, total, avg: total/pLines.length, genAvg: p?.scores?.length?avgOf(p.scores):null, teamName: team.name });
       });
     });
   } else if((t.mode === 'equipo' || t.mode === 'trio') && t.format === 'suma+bracket') {
@@ -9541,7 +9542,7 @@ function buildTournamentPlayerAverages(t) {
         if(!allLines.length) return;
         const p = DB.players.find(x=>x.id===pid);
         const total = allLines.reduce((s,v)=>s+v,0);
-        rows.push({ pid, name: p?p.name:pid, cat: p?p.cat:'?', lines: allLines.length, total, avg: total/allLines.length, genAvg: p?.scores?.length?avgOf(p.scores):null, teamName: team.name });
+        rows.push({ pid, name: p?p.name:pid, cat: getPlayerCatInTournament(t, pid), lines: allLines.length, total, avg: total/allLines.length, genAvg: p?.scores?.length?avgOf(p.scores):null, teamName: team.name });
       });
     });
   } else if((t.mode === 'equipo' || t.mode === 'trio') && t.format !== 'suma+bracket') {
@@ -9550,7 +9551,7 @@ function buildTournamentPlayerAverages(t) {
       let row = rows.find(r=>r.pid===pid);
       if(!row) {
         const p = DB.players.find(x=>x.id===pid);
-        row = { pid, name: p?p.name:pid, cat: p?p.cat:'?', lines:0, total:0, avg:0, genAvg: p?.scores?.length?avgOf(p.scores):null, teamName };
+        row = { pid, name: p?p.name:pid, cat: getPlayerCatInTournament(t, pid), lines:0, total:0, avg:0, genAvg: p?.scores?.length?avgOf(p.scores):null, teamName };
         rows.push(row);
       }
       row.lines++; row.total += v;
@@ -10279,7 +10280,7 @@ function buildZonaFinalIndividual(t) {
     const finalTotal = sc.reduce((s,v)=>s+(v||0), 0);
     const filledCount = sc.filter(v=>v>0).length;
     const grandTotal = isArrastre ? (phaseAccum[e.id]||0) + finalTotal : finalTotal;
-    return { id: e.id, name: p?p.name:e.id, cat: p?p.cat:'?', scores: sc, finalTotal, filled: filledCount, grandTotal, phaseAccum: phaseAccum[e.id]||0, hcap };
+    return { id: e.id, name: p?p.name:e.id, cat: getPlayerCatInTournament(t, e.id), scores: sc, finalTotal, filled: filledCount, grandTotal, phaseAccum: phaseAccum[e.id]||0, hcap };
   }).sort((a,b) => b.grandTotal - a.grandTotal);
 
   // Champion
@@ -10705,7 +10706,7 @@ function buildLigaGruposTab(t) {
   const enrolled = t.participants || [];
   const canEdit = isTournamentAdmin();
   const getName = pid => DB.players.find(x=>x.id===pid)?.name || pid;
-  const getCat = pid => DB.players.find(x=>x.id===pid)?.cat || '?';
+  const getCat = pid => getPlayerCatInTournament(t, pid);
 
   if(enrolled.length < 4) {
     return `<div class="empty"><div class="empty-icon">🗂</div><div class="empty-title">Agregá jugadores primero</div><div class="empty-sub">Necesitás al menos 24 jugadores en la pestaña Participantes.</div></div>`;
