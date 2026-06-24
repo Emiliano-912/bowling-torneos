@@ -706,6 +706,7 @@ body.admin-mode .admin-only-block { display: block !important; }
         <span id="det-badge" class="badge"></span>
       </div>
       <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost btn-sm admin-only" id="det-edit-name">✏️</button>
         <button class="btn btn-ghost btn-sm admin-only" id="det-change-cat">📋 Cat</button>
         <button class="btn btn-danger btn-sm admin-only" id="det-delete-player">🗑</button>
         <button class="btn btn-accent btn-sm admin-only" id="det-add-lines">+ Líneas</button>
@@ -1353,15 +1354,17 @@ function changePlayerCategory(playerId, newCat) {
   const oldCat = p.cat;
   if(oldCat === newCat) return;
 
-  // Snapshot old category into all existing tournaments
   (DB.tournaments||[]).forEach(t => {
     const isInTournament =
       (t.participants||[]).includes(playerId) ||
       (t.teams||[]).some(team => (team.members||[]).includes(playerId)) ||
       (t.ligaGrupos && (t.ligaGrupos.grupos||[]).some(g => (g.members||[]).includes(playerId)));
-    if(isInTournament) {
+    if(!isInTournament) return;
+    if(t.status === 'finalizado') {
       if(!t.catSnapshots) t.catSnapshots = {};
       t.catSnapshots[playerId] = oldCat;
+    } else {
+      if(t.catSnapshots) delete t.catSnapshots[playerId];
     }
   });
 
@@ -1371,13 +1374,36 @@ function changePlayerCategory(playerId, newCat) {
   toast(`✓ ${p.name}: ${oldCat} → ${newCat}`);
 }
 
+function openEditName(playerId) {
+  const p = DB.players.find(x=>x.id===playerId);
+  if(!p || !isAdmin()) return;
+  document.getElementById('mr-body').innerHTML = `
+    <div style="font-weight:700;font-size:.88rem;margin-bottom:10px">Editar nombre de ${esc(p.name)}</div>
+    <div class="field"><label class="label">Nombre</label>
+      <input class="input" id="edit-name-val" value="${esc(p.name)}" style="font-size:1.1rem" maxlength="60">
+    </div>`;
+  document.getElementById('mr-submit').textContent = 'Guardar nombre';
+  document.getElementById('mr-submit').onclick = () => {
+    const newName = document.getElementById('edit-name-val').value.trim();
+    if(!newName) { toast('El nombre no puede estar vacío','err'); return; }
+    if(newName === p.name) { closeModal('modal-match-result'); return; }
+    const oldName = p.name;
+    p.name = newName;
+    save(); renderView();
+    toast(`✓ ${oldName} → ${newName}`);
+    closeModal('modal-match-result');
+    if(document.getElementById('modal-detail').classList.contains('open')) openDetail(playerId);
+  };
+  openModal('modal-match-result');
+}
+
 function openChangeCat(playerId) {
   const p = DB.players.find(x=>x.id===playerId);
   if(!p || !isAdmin()) return;
   const opts = CATS.map(c => `<option value="${c}" ${c===p.cat?'selected':''}>${c}</option>`).join('');
   document.getElementById('mr-body').innerHTML = `
     <div style="font-weight:700;font-size:.88rem;margin-bottom:10px">Cambiar categoría de ${esc(p.name)}</div>
-    <div style="font-size:.68rem;color:var(--muted);margin-bottom:12px">El cambio NO afecta torneos en curso ni terminados.</div>
+    <div style="font-size:.68rem;color:var(--muted);margin-bottom:12px">Se actualiza en torneos activos/pendientes. Los finalizados conservan la categoría original.</div>
     <div class="field"><label class="label">Categoría actual: <strong>${p.cat}</strong></label>
       <select class="input" id="chcat-val" style="font-size:1.1rem">${opts}</select>
     </div>`;
@@ -2097,6 +2123,7 @@ function openDetail(playerId, filterTrnId) {
   document.getElementById('det-badge').className = 'badge '+CAT_CLS[p.cat];
   if(isAdmin()) document.getElementById('det-add-lines').onclick = ()=>{ closeModal('modal-detail'); openAddLines(playerId); };
   if(isAdmin()) document.getElementById('det-delete-player').onclick = ()=>{ deletePlayer(playerId); };
+  if(isAdmin()) document.getElementById('det-edit-name').onclick = ()=>{ openEditName(playerId); };
   if(isAdmin()) document.getElementById('det-change-cat').onclick = ()=>{ openChangeCat(playerId); };
 
   const body = document.getElementById('det-body');
