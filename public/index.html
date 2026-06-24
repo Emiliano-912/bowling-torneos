@@ -1365,6 +1365,17 @@ function changePlayerCategory(playerId, newCat) {
       t.catSnapshots[playerId] = oldCat;
     } else {
       if(t.catSnapshots) delete t.catSnapshots[playerId];
+      if(t.handicaps) {
+        const allPids = [];
+        if(t.mode === 'individual') { allPids.push(...(t.participants||[])); }
+        else { (t.teams||[]).forEach(team => { allPids.push(...(team.members||[])); }); }
+        const sameNewCatPid = allPids.find(pid => pid !== playerId && DB.players.find(x=>x.id===pid)?.cat === newCat && t.handicaps[pid] != null);
+        if(sameNewCatPid != null) {
+          t.handicaps[playerId] = t.handicaps[sameNewCatPid];
+        } else {
+          delete t.handicaps[playerId];
+        }
+      }
     }
   });
 
