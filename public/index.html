@@ -2435,9 +2435,9 @@ function buildTorneos() {
   if(!ts.length) {
     return `<div class="filter-bar">${searchBar}${backupBtns}${addBtn}</div><div class="empty"><div class="empty-icon">🏅</div><div class="empty-title">No hay torneos todavía</div><div class="empty-sub">Creá un torneo individual o por parejas con clasificación por zona o eliminación directa</div></div>`;
   }
-  const filtered = torneoFilterQ
+  const filtered = (torneoFilterQ
     ? ts.filter(t => t.name.toLowerCase().includes(torneoFilterQ.toLowerCase()))
-    : ts;
+    : ts).slice().reverse();
   if(!filtered.length) {
     return `<div class="filter-bar">${searchBar}${backupBtns}${addBtn}</div><div class="empty"><div class="empty-title">Sin resultados para "${torneoFilterQ}"</div></div>`;
   }
